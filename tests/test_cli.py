@@ -38,7 +38,7 @@ def test_help_lists_the_commands():
     result = run("--help")
     assert result.returncode == 0
     assert result.stdout.startswith("usage: switchboard")
-    for command in ("hook", "state", "seen", "refresh"):
+    for command in ("hook", "state", "seen", "refresh", "sidebar"):
         assert command in result.stdout
 
 

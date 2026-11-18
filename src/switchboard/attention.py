@@ -1,6 +1,7 @@
 """`@attention`: each session's status bar names the other sessions that need the user or are done.
 
-The value is a tmux format that `status-right` shows with `#{E:@attention}`.
+The value is a tmux format that `status-right` shows with `#{E:@attention}`. Writing it also asks
+each open sidebar to redraw.
 """
 
 from __future__ import annotations
@@ -87,7 +88,7 @@ def render(states: Mapping[str, Iterable[str]], own: str) -> str:
     return f"{GAP.join(_style(entry) for entry in entries)}#[default] "
 
 
-def _write(sessions: Sequence[Session], panes: Iterable[Pane]) -> None:
+def _write(sessions: Sequence[Session], panes: Sequence[Pane]) -> None:
     agents = tmux.agents_by_session(panes)
     states = {s.name: [a.state for a in agents.get(s.name, ())] for s in sessions}
     commands = []
@@ -96,6 +97,11 @@ def _write(sessions: Sequence[Session], panes: Iterable[Pane]) -> None:
         if value != session.attention:
             commands.append(("set-option", "-t", f"={session.name}:", tmux.ATTENTION, value))
     run.tmux(*commands)
+    sidebars = [pane.sidebar for pane in panes if pane.sidebar]
+    if sidebars:
+        from switchboard import sidebar
+
+        sidebar.poke(sidebars)
 
 
 def _entry(name: str, counts: Counter[str], group: str) -> list[tuple[str, str]]:

@@ -44,7 +44,7 @@ SGR = {ps.NEEDS: "red", ps.DONE: "green", ps.WORKING: "peach", ps.IDLE: "green"}
 SUMMED = (ps.NEEDS, ps.DONE, ps.WORKING)
 TEXT, BOLD, DIM, LINE = "text", "bold text", "subtext0", "overlay1"
 MUTED, CURRENT = "dim overlay0", "bold green"
-WIDTH = 40
+WIDTH, NARROW = 40, 20
 
 MODEL, FOLDED = "model.json", "folded.json"
 
@@ -92,14 +92,14 @@ def pick() -> int:
     return 0
 
 
-def fzf_problem() -> str | None:
+def fzf_problem(who: str = "the picker") -> str | None:
     words = (run.output("fzf", "--version") or "").split()
     found = words[0] if words else "none"
     parts = found.split(".")
     numbers = [int(part) for part in parts[:2] if part.isdecimal()]
     if len(numbers) == 2 and tuple(numbers) >= MIN_FZF:
         return None
-    return f"the picker needs fzf {'.'.join(map(str, MIN_FZF))} or newer; found {found}"
+    return f"{who} needs fzf {'.'.join(map(str, MIN_FZF))} or newer; found {found}"
 
 
 def pinned() -> tuple[str, str]:
@@ -110,10 +110,24 @@ def pinned() -> tuple[str, str]:
 
 
 def fzf_args(folder: str, at: int | None) -> list[str]:
-    """Search starts off: `/` shows the input line, and Esc then clears it and goes back."""
-    fold = shlex.join([*_self(), "__fold", folder])
-    preview = shlex.join([*_self(), "__preview"])
-    back = shlex.quote(f"{BACK_KEYS}+change-header:{_hints(HINT)}")
+    preview = shlex.join([*command(), "__preview"])
+    return [
+        *list_args(folder, at, KEYS, (HINT, SEARCH_HINT), "abort"),
+        f"--preview={preview} {{1}}",
+        f"--preview-window={PREVIEW}",
+        "--bind",
+        "enter:transform:[ -n {1} ] && echo accept",
+    ]
+
+
+def list_args(
+    folder: str, at: int | None, keys: str, hints: tuple[str, str], leave: str
+) -> list[str]:
+    """Search starts off: `/` shows the input line, and Esc then clears it and goes back. Out of a
+    search, Esc does `leave`."""
+    hint, search_hint = hints
+    fold = shlex.join([*command(), "__fold", folder])
+    out = shlex.quote(back(hint))
     args = [
         "--ansi",
         "--no-sort",
@@ -122,19 +136,15 @@ def fzf_args(folder: str, at: int | None) -> list[str]:
         "--prompt=> ",
         "--no-input",
         "--bind",
-        KEYS,
+        keys,
         "--bind",
-        f"/:{SEARCH_KEYS}+change-header:{_hints(SEARCH_HINT)}",
+        f"/:{SEARCH_KEYS}+change-header:{_hints(search_hint)}",
         "--bind",
-        f'esc:transform:[ "$FZF_INPUT_STATE" = enabled ] && printf %s {back} || echo abort',
+        f'esc:transform:[ "$FZF_INPUT_STATE" = enabled ] && printf %s {out} || echo {leave}',
         "--delimiter=\t",
         "--with-nth=3",
         "--with-shell=sh -c",
-        f"--header={_hints(HINT)}",
-        f"--preview={preview} {{1}}",
-        f"--preview-window={PREVIEW}",
-        "--bind",
-        "enter:transform:[ -n {1} ] && echo accept",
+        f"--header={_hints(hint)}",
         "--bind",
         f"tab:transform:{fold} {{2}}",
     ]
@@ -143,8 +153,14 @@ def fzf_args(folder: str, at: int | None) -> list[str]:
     return args
 
 
-def render(found: Model, current: str) -> list[Group]:
-    """Each group's header, open and shut, and its lines: the repos, then "other"."""
+def back(hint: str) -> str:
+    """The actions that leave a search."""
+    return f"{BACK_KEYS}+change-header:{_hints(hint)}"
+
+
+def render(found: Model, current: str, compact: bool = False) -> list[Group]:
+    """Each group's title, its header open and shut, and its lines: the repos, then "other". The
+    compact list has no agent lines, counts or git status, and cuts long names short."""
     named: list[tuple[str, Mapping[str, int], Sequence[Row]]] = [
         (str(repo.label) if repo.label else repo.name, repo.counts, repo.rows)
         for repo in found.repos
@@ -152,22 +168,24 @@ def render(found: Model, current: str) -> list[Group]:
     if found.other:
         named.append(("other", Counter(row.state for row in found.other if row.state), found.other))
     every = [row for *_, members in named for row in members]
-    width = min(WIDTH, max((len(_name(row)) for row in every), default=0))
-    status_width = max((len(_status(row)) for row in every), default=0)
+    width = min(NARROW if compact else WIDTH, max((len(_name(row)) for row in every), default=0))
+    status_width = 0 if compact else max((len(_status(row)) for row in every), default=0)
     groups: list[Group] = []
     for index, (title, counts, members) in enumerate(named):
         body = []
         for row in members:
-            display = _worktree(row, current, width, status_width)
+            display = _worktree(row, current, width, status_width, compact)
             body.append(_line(row.session.name, index, display))
             body += [
                 _line(row.session.name, index, _agent(agent, n == len(row.agents) - 1))
-                for n, agent in enumerate(row.agents)
+                for n, agent in enumerate(() if compact else row.agents)
             ]
+        shown = {} if compact else counts
         groups.append(
             {
-                "open": _line("", index, _header(OPEN, title, counts)),
-                "shut": _line("", index, _header(SHUT, title, counts)),
+                "title": title,
+                "open": _line("", index, _header(OPEN, title, shown)),
+                "shut": _line("", index, _header(SHUT, title, shown)),
                 "rows": body,
             }
         )
@@ -190,18 +208,18 @@ def cursor(groups: Sequence[Group], session: str) -> int | None:
 
 
 def rows(folder: str) -> str:
-    groups, folded = _load(folder)
+    groups, folded = cached(folder)
     return "".join(f"{line}\n" for line in lines(groups, folded))
 
 
 def fold(folder: str, group: str) -> str:
     """Toggles `group`'s fold, and gives the fzf actions that reload the lines with the cursor
     on its header. While searching, positions in fzf's list aren't ours to know."""
-    groups, folded = _load(folder)
+    groups, folded = cached(folder)
     index = int(group)
     folded ^= {index}
     Path(folder, FOLDED).write_text(json.dumps(sorted(folded)), encoding="utf-8")
-    reload = f"reload:{shlex.join([*_self(), '__rows', folder])}"
+    reload = f"reload:{shlex.join([*command(), '__rows', folder])}"
     if os.environ.get("FZF_QUERY"):
         return reload
     above = groups[:index]
@@ -211,7 +229,7 @@ def fold(folder: str, group: str) -> str:
 
 def _hints(text: str) -> str:
     """fzf's header: the hints between blank rows."""
-    return f" \n{sgr(MUTED, text)}\n "
+    return " \n" + "\n".join(sgr(MUTED, line) for line in text.split("\n")) + "\n "
 
 
 def _header(caret: str, title: str, counts: Mapping[str, int]) -> str:
@@ -221,14 +239,17 @@ def _header(caret: str, title: str, counts: Mapping[str, int]) -> str:
     return f"{sgr(TEXT, caret)} {sgr(BOLD, title)}{summary}"
 
 
-def _worktree(row: Row, current: str, width: int, status_width: int) -> str:
+def _worktree(row: Row, current: str, width: int, status_width: int, cut: bool = False) -> str:
     mark = sgr(CURRENT, HERE) if row.session.name == current else " "
     state = row.state
     icon = sgr(SGR[state], ICON[state]) if state else ""
-    status = _status(row)
+    status = _status(row) if status_width else ""
     column = sgr(DIM, status) + " " * (status_width - len(status)) if status else " " * status_width
     gap = "  " if status_width else ""
-    name = sgr(TEXT, _name(row)) + " " * (width - len(_name(row)))
+    text = _name(row)
+    if cut and len(text) > width:
+        text = text[: width - 1] + "…"
+    name = sgr(TEXT, text) + " " * (width - len(text))
     return f"{sgr(LINE, '│')} {mark} {name}{gap}{column}  {icon}".rstrip()
 
 
@@ -262,11 +283,12 @@ def sgr(style: str, text: str) -> str:
     return f"\033[{theme.sgr(style)}m{text}\033[0m"
 
 
-def _self() -> list[str]:
+def command() -> list[str]:
+    """switchboard itself, for fzf's bindings to call back into."""
     return [sys.executable, "-m", "switchboard"]
 
 
-def _load(folder: str) -> tuple[list[Group], set[int]]:
+def cached(folder: str) -> tuple[list[Group], set[int]]:
     groups = json.loads(Path(folder, MODEL).read_text(encoding="utf-8"))
     try:
         folded = set(json.loads(Path(folder, FOLDED).read_text(encoding="utf-8")))
