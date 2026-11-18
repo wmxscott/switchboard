@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | in progress · next: A7 |
+| **Status** | in progress · next: R1 (Stack A landed) |
 | **Updated** | 2026-11-18 |
 | **Tracker** | — |
 | **Related** | [approved design](../superpowers/specs/2026-11-18-switchboard-design.md); wkt's `docs/plans/too7nn-tmux-mode.md` (S5, S19, S21); dotfiles `docs/superpowers/specs/2026-11-16-tmux-core-design.md` |
@@ -300,3 +300,4 @@ Ask of every PR:
 - 2026-11-18: phase A4 landed as #5. Alerts fire on changes to the displayed state only (a lead stopping with a prompt pending stays ▲ and doesn't alert "done"). `SessionEnd` always refreshes. For R2, the hook must quote with `#{q:session_name}`.
 - 2026-11-18: phase A5 landed as #6. Colours use the 16 ANSI colours (`--color=16`). The pinned client is right when a key on that client opens the popup, which is how the binding works; a popup opened from outside tmux isn't covered, as with wkt. The README's "every command is a stub" line is left for A7.
 - 2026-11-18: phase A6 landed as #7. `↑` is left out when origin has no branches. A few hook tests depend on the 2-second `run.TIMEOUT` and could fail under heavy load; harden them if CI does.
+- 2026-11-18: phase A7 landed as #8 (switchboard 1.0.0). It needs tmux 3.8 (theme colour names). Known follow-up: a session name starting with `$` makes `=$name` read as a session id, so `refresh` (and the switch) fail for it. wkt's names never start with `$`. Fix by targeting sessions by id in a later release.
