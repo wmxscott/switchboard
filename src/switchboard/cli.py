@@ -5,12 +5,16 @@ from __future__ import annotations
 import sys
 from collections.abc import Sequence
 
+STATE_USAGE = "<start|working|done|idle|needs KEY|resolve KEY|all|end> [--agent NAME]"
+
 
 def main(argv: Sequence[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
-    # The hook runs on every Claude tool call: skip argparse.
+    # Hooks run on every agent tool call: skip argparse.
     if argv[:1] == ["hook"]:
         return cmd_hook(argv[1:])
+    if argv[:1] == ["state"]:
+        return cmd_state(argv[1:])
     if argv[:1] in (["__rows"], ["__fold"]):
         return cmd_picker_reload(argv)
     if argv[:1] == ["__preview"]:
@@ -25,15 +29,18 @@ def _main(argv: list[str]) -> int:
 
     parser = argparse.ArgumentParser(
         prog="switchboard",
-        description="Switch between tmux sessions, and see which Claude Code agents need you."
+        description="Switch between tmux sessions, and see which coding agents need you."
         " With no command, open the picker.",
     )
     parser.add_argument("-V", "--version", action="version", version=f"%(prog)s {__version__}")
     sub = parser.add_subparsers(dest="command", metavar="<command>")
 
-    p = sub.add_parser("hook", help="Claude Code hook entry point, reading the hook JSON on stdin")
+    p = sub.add_parser("hook", help="an agent's hook entry point, reading the hook JSON on stdin")
+    p.add_argument("--agent", default="claude", help="the agent, by default claude")
     p.add_argument("event", nargs="?", help="the hook event, such as Stop")
-    p.set_defaults(func=lambda args: cmd_hook([args.event] if args.event else []))
+    p.set_defaults(func=lambda args: cmd_hook(["--agent", args.agent, *filter(None, [args.event])]))
+
+    sub.add_parser("state", help="set this pane's agent state, for an agent with no adapter")
 
     p = sub.add_parser("seen", help="mark a session's finished agents seen")
     p.add_argument("session", nargs="?", help="the session, by default the current one")
@@ -66,6 +73,26 @@ def cmd_hook(args: list[str]) -> int:
             from switchboard import hook
 
             hook.handle(args, pane, sys.stdin.buffer.read())
+    return 0
+
+
+def cmd_state(args: list[str]) -> int:
+    """Silent and always 0 at runtime, like the hook; malformed arguments exit 2."""
+    import os
+
+    from switchboard import core
+
+    found = core.split_agent(args)
+    verb = core.parse(found[1]) if found else None
+    if found is None or verb is None:
+        print(f"usage: switchboard state {STATE_USAGE}", file=sys.stderr)
+        return 2
+    pane = os.environ.get("TMUX_PANE")
+    if pane:
+        import contextlib
+
+        with contextlib.suppress(Exception):
+            core.perform(pane, [verb], found[0])
     return 0
 
 

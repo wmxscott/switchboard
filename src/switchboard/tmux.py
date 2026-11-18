@@ -44,6 +44,7 @@ class Pane:
     turn: str = ""
     pending: tuple[str, ...] = ()
     at: int = 0
+    agent: str = ""
 
     @property
     def is_agent(self) -> bool:
@@ -71,8 +72,8 @@ def parse_sessions(text: str) -> list[Session]:
 
 def parse_panes(text: str) -> list[Pane]:
     return [
-        Pane(name, _int(window), pid, cmd, role, turn, panestate.decode_pending(pending), _int(at))
-        for name, window, pid, cmd, role, turn, pending, at in _rows(text, len(PANE_FIELDS))
+        Pane(name, _int(win), pid, cmd, role, turn, panestate.decode_pending(keys), _int(at), agent)
+        for name, win, pid, cmd, role, turn, keys, at, agent in _rows(text, len(PANE_FIELDS))
     ]
 
 

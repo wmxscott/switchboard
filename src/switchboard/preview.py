@@ -65,8 +65,10 @@ def layout(session: str) -> Layout | None:
         fields = line.split("\t", len(FIELDS) - 1)
         if len(fields) != len(FIELDS) or not fields[1].isdecimal():
             continue
-        path, index, window_on, pane_id, pane_on, command, role, turn, pending, _, name = fields
-        pane = Pane(session, int(index), pane_id, command, role, turn, ps.decode_pending(pending))
+        path, index, window_on, pane_id, pane_on, command, *options, name = fields
+        role, turn, pending, _, agent = options
+        keys = ps.decode_pending(pending)
+        pane = Pane(session, int(index), pane_id, command, role, turn, keys, agent=agent)
         windows.setdefault(pane.window, Window(pane.window, name, window_on == "1"))
         panes.append(pane)
         if window_on == pane_on == "1":
