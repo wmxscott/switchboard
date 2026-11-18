@@ -1,6 +1,7 @@
 """`switchboard hook <event>`: a Claude Code hook event becomes its pane's agent state.
 
-At most one tmux read and one tmux write per event, and only light imports.
+An event that changes nothing makes one tmux read, with only light imports. A change adds one
+write, then the alert and a refresh.
 """
 
 from __future__ import annotations
@@ -8,7 +9,6 @@ from __future__ import annotations
 import json
 import os
 import time
-from collections.abc import Iterable
 
 from switchboard import panestate as ps
 from switchboard import run
@@ -22,9 +22,10 @@ HANDLED = (
 )
 SESSION_KEPT = frozenset({"clear", "resume"})
 PANE_FORMAT = "\t".join(f"#{{{name}}}" for name in ("session_name", ps.ROLE, ps.TURN, ps.PENDING))
-CLIENT_SESSIONS = ("list-clients", "-F", "#{client_session}")
+CLIENTS = ("list-clients", "-F", "#{client_name}\t#{client_session}")
 
 State = tuple[str, str, str]
+Client = tuple[str, str]
 
 
 def handle(args: list[str], pane: str, stdin: bytes) -> None:
@@ -33,22 +34,32 @@ def handle(args: list[str], pane: str, stdin: bytes) -> None:
         return
     event = args[0] if args else str(payload.get("hook_event_name", ""))
     if event == "SessionEnd" and payload.get("reason") not in SESSION_KEPT:
-        run.output("tmux", *_chain(("set-option", "-p", "-u", "-t", pane, o) for o in ps.OPTIONS))
+        run.tmux(*(("set-option", "-p", "-u", "-t", pane, o) for o in ps.OPTIONS))
+        from switchboard import attention
+
+        attention.refresh()
         return
     if not _relevant(event, payload):
         return
     view = read(pane)
     if view is None:
         return
-    session, stored, viewed = view
+    session, stored, clients = view
+    viewed = any(where == session for _, where in clients)
     state = apply(event, payload, pane, stored, viewed)
     if state != stored:
         write(pane, state)
-        changed(session, stored, state)
+        changed(session, stored, state, clients)
 
 
-def changed(session: str, before: State, after: State) -> None:
-    """Called after every state change: A4 refreshes `@attention` and alerts here."""
+def changed(session: str, before: State, after: State, clients: list[Client]) -> None:
+    """Alerts every client when none is viewing `session`, then refreshes `@attention`."""
+    from switchboard import alert, attention
+
+    news = alert.news(before, after)
+    if news and all(where != session for _, where in clients):
+        alert.send(news, session, [name for name, _ in clients])
+    attention.refresh()
 
 
 def apply(event: str, payload: dict, pane: str, stored: State, viewed: bool) -> State:
@@ -84,19 +95,18 @@ def apply(event: str, payload: dict, pane: str, stored: State, viewed: bool) -> 
     return role, turn, ps.encode_pending(keys)
 
 
-def read(pane: str) -> tuple[str, State, bool] | None:
-    """The pane's session, its stored state, and whether a client is viewing that session."""
-    out = run.output(
-        "tmux", *_chain([("display-message", "-p", "-t", pane, PANE_FORMAT), CLIENT_SESSIONS])
-    )
+def read(pane: str) -> tuple[str, State, list[Client]] | None:
+    """The pane's session, its stored state, and each client's name and session."""
+    out = run.tmux(("display-message", "-p", "-t", pane, PANE_FORMAT), CLIENTS)
     if out is None:
         return None
-    first, *clients = out.split("\n")
+    first, *lines = out.split("\n")
     fields = first.split("\t")
     if len(fields) != 4:
         return None
     session, role, turn, pending = fields
-    return session, (role, turn, pending), session in clients
+    clients = [(name, where) for name, tab, where in (s.partition("\t") for s in lines) if tab]
+    return session, (role, turn, pending), clients
 
 
 def write(pane: str, state: State) -> None:
@@ -109,7 +119,7 @@ def write(pane: str, state: State) -> None:
         if pending
         else ("set-option", "-p", "-u", "-t", pane, ps.PENDING),
     ]
-    run.output("tmux", *_chain(commands))
+    run.tmux(*commands)
 
 
 def listed_as_teammate(pane: str) -> bool:
@@ -170,10 +180,3 @@ def _alive(lead: object) -> bool:
     except OSError:
         return True
     return True
-
-
-def _chain(commands: Iterable[tuple[str, ...]]) -> list[str]:
-    args: list[str] = []
-    for command in commands:
-        args += [";", *command] if args else command
-    return args

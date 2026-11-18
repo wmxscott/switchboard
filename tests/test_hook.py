@@ -13,21 +13,26 @@ import time
 
 import pytest
 
-from switchboard import hook, panestate
+from switchboard import alert, hook, panestate
 
 PANE = "%7"
 READ = [
     *("display-message", "-p", "-t", PANE),
     "#{session_name}\t#{@switchboard-role}\t#{@switchboard-turn}\t#{@switchboard-pending}",
-    *(";", "list-clients", "-F", "#{client_session}"),
+    *(";", "list-clients", "-F", "#{client_name}\t#{client_session}"),
 ]
 SCRIPT = os.path.join(os.path.dirname(sys.executable), "switchboard")
 A1 = {"agent_id": "a1"}
 
 
 def stored(stubs, state: str = "lead:working:", viewed: bool = False) -> None:
-    """What the stub tmux answers the hook's read with."""
-    lines = ["work\t" + state.replace(":", "\t"), "work" if viewed else "elsewhere", "other"]
+    """What the stub tmux answers the hook's read with: the pane is in `work`, and two clients
+    are elsewhere, or one of them is on `work` when `viewed`."""
+    lines = [
+        "work\t" + state.replace(":", "\t"),
+        "/dev/ttys001\t" + ("work" if viewed else "elsewhere"),
+        "/dev/ttys002\tother",
+    ]
     stubs.tmux.answer("display-message", stdout="\n".join(lines) + "\n")
 
 
@@ -149,9 +154,9 @@ def test_parallel_subagents_do_not_clear_each_other(stubs):
         assert after(stubs) == expected, (event, agent)
 
 
-def test_session_end_unsets_every_option_without_reading(stubs):
+def test_session_end_unsets_every_option_without_reading_then_refreshes(stubs):
     fire("SessionEnd", reason="prompt_input_exit")
-    assert len(stubs.tmux.calls()) == 1
+    assert [call[0] for call in stubs.tmux.calls()] == ["set-option", "list-sessions"]
     assert written(stubs) == dict.fromkeys(panestate.OPTIONS)
 
 
@@ -295,6 +300,152 @@ def test_the_console_script_writes_the_state(stubs):
     result = script("PermissionRequest", json.dumps({"hook_event_name": "PermissionRequest"}))
     assert (result.returncode, result.stdout, result.stderr) == (0, "", "")
     assert after(stubs) == "lead:working:lead"
+
+
+@pytest.fixture
+def played(monkeypatch) -> list[bool]:
+    calls: list[bool] = []
+    monkeypatch.setattr(alert, "play", lambda: calls.append(True))
+    return calls
+
+
+def alerts(stubs) -> list[tuple[str, str]]:
+    """Each client the hook messaged, with the message."""
+    found = []
+    for call in stubs.tmux.calls():
+        for command in commands(call):
+            if command[:2] == ["display-message", "-c"]:
+                assert command[3:5] == ["-d", "4000"]
+                found.append((command[2], command[5]))
+    return found
+
+
+def test_a_change_to_needs_you_alerts_every_client_once_then_refreshes(stubs, played):
+    stored(stubs, "lead:working:")
+    fire("PermissionRequest")
+    message = "▲ work needs you"
+    assert alerts(stubs) == [("/dev/ttys001", message), ("/dev/ttys002", message)]
+    assert played == [True]
+    assert [call[0] for call in stubs.tmux.calls()] == [
+        "display-message",
+        "set-option",
+        "display-message",
+        "list-sessions",
+    ]
+
+
+def test_no_alert_for_a_session_a_client_is_viewing(stubs, played):
+    stored(stubs, "lead:working:", viewed=True)
+    fire("PermissionRequest")
+    assert after(stubs) == "lead:working:lead"
+    assert alerts(stubs) == []
+    assert played == []
+    assert stubs.tmux.calls()[-1][0] == "list-sessions"
+
+
+@pytest.mark.parametrize(
+    ("before", "expected"),
+    [
+        ("lead:working:", [(c, "✓ work is done") for c in ("/dev/ttys001", "/dev/ttys002")]),
+        ("teammate:working:", []),
+    ],
+)
+def test_a_leads_done_alerts_but_a_teammates_stop_does_not(stubs, played, before, expected):
+    stored(stubs, before)
+    fire("Stop")
+    assert alerts(stubs) == expected
+    assert played == ([True] if expected else [])
+
+
+def test_a_teammates_needs_you_alerts(stubs, played):
+    stored(stubs, "teammate:working:")
+    fire("PermissionRequest", tool_name="Bash")
+    assert alerts(stubs)[0] == ("/dev/ttys001", "▲ work needs you")
+
+
+def test_a_leads_stop_with_a_prompt_pending_does_not_alert(stubs, played):
+    stored(stubs, "lead:working:a1")
+    fire("Stop")
+    assert after(stubs) == "lead:done:a1"
+    assert alerts(stubs) == []
+    assert played == []
+    assert stubs.tmux.calls()[-1][0] == "list-sessions"
+
+
+@pytest.mark.parametrize(
+    ("viewed", "expected"),
+    [
+        (False, [(c, "✓ work is done") for c in ("/dev/ttys001", "/dev/ttys002")]),
+        (True, []),
+    ],
+)
+def test_answering_that_prompt_alerts_done_unless_viewed(stubs, played, viewed, expected):
+    stored(stubs, "lead:done:a1", viewed=viewed)
+    fire("PostToolUse", agent_id="a1")
+    assert after(stubs) == "lead:done:"
+    assert alerts(stubs) == expected
+    assert played == ([True] if expected else [])
+
+
+def test_another_prompt_while_one_is_pending_does_not_alert_again(stubs, played):
+    stored(stubs, "lead:working:a1")
+    fire("PermissionRequest")
+    assert after(stubs) == "lead:working:a1,lead"
+    assert alerts(stubs) == []
+    assert played == []
+
+
+def test_a_change_without_news_only_refreshes(stubs, played):
+    stored(stubs, "lead:working:lead")
+    fire("PostToolUse")
+    assert after(stubs) == "lead:working:"
+    assert alerts(stubs) == []
+    assert stubs.tmux.calls()[-1][0] == "list-sessions"
+
+
+def test_no_change_neither_alerts_nor_refreshes(stubs, played):
+    stored(stubs, "lead:working:")
+    fire("PostToolUse")
+    assert stubs.tmux.calls() == [READ]
+    assert played == []
+
+
+def test_the_refresh_after_a_change_updates_other_sessions(stubs, played):
+    stored(stubs, "lead:working:")
+    stubs.tmux.answer("list-sessions", stdout="work\t\t/w\t0\t\nother\t\t/o\t0\t\n")
+    stubs.tmux.answer("list-panes", stdout="work\t0\t%7\tclaude\tlead\tworking\tlead\t0\n")
+    fire("PermissionRequest")
+    writes = [call for call in stubs.tmux.calls() if "@attention" in call]
+    assert writes == [
+        ["set-option", "-t", "=other:", "@attention", "#[fg=themeyellow]▲ work#[default] "]
+    ]
+
+
+def test_the_hook_does_not_wait_for_the_sound(stubs, tmp_path):
+    started = tmp_path / "started"
+    slow = tmp_path / "bin" / "afplay"
+    slow.write_text(
+        f"#!{sys.executable}\nimport sys, time\n"
+        f"open({str(started)!r}, 'w').write(sys.argv[1])\ntime.sleep(5)\n"
+    )
+    stored(stubs, "lead:working:")
+    payload = json.dumps({"hook_event_name": "PermissionRequest"})
+    start = time.perf_counter()
+    result = subprocess.run(
+        [SCRIPT, "hook", "PermissionRequest"],
+        input=payload,
+        capture_output=True,
+        text=True,
+        timeout=30,
+        env={**os.environ, "TMUX_PANE": PANE, "SWITCHBOARD_SOUND": "/sounds/chime.aiff"},
+    )
+    assert (result.returncode, result.stdout, result.stderr) == (0, "", "")
+    assert time.perf_counter() - start < 3
+    assert alerts(stubs)
+    deadline = time.monotonic() + 10
+    while not started.exists() and time.monotonic() < deadline:
+        time.sleep(0.05)
+    assert started.read_text() == "/sounds/chime.aiff"
 
 
 RUNS = 15

@@ -8,7 +8,14 @@ from dataclasses import dataclass
 
 from switchboard import panestate, run
 
-SESSION_FIELDS = ("session_name", "@wkt-worktree", "session_path", "session_last_attached")
+ATTENTION = "@attention"
+SESSION_FIELDS = (
+    "session_name",
+    "@wkt-worktree",
+    "session_path",
+    "session_last_attached",
+    ATTENTION,
+)
 PANE_FIELDS = (
     "session_name",
     "window_index",
@@ -24,6 +31,7 @@ class Session:
     tag: str
     path: str
     last_attached: int = 0
+    attention: str = ""
 
 
 @dataclass(frozen=True)
@@ -56,8 +64,8 @@ def panes() -> list[Pane]:
 
 def parse_sessions(text: str) -> list[Session]:
     return [
-        Session(name, tag, path, _int(last))
-        for name, tag, path, last in _rows(text, len(SESSION_FIELDS))
+        Session(name, tag, path, _int(last), attention)
+        for name, tag, path, last, attention in _rows(text, len(SESSION_FIELDS))
     ]
 
 
