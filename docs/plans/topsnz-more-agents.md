@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | in progress · next: release 1.1.0 (S3), then X1 and P1, then Stack D |
+| **Status** | 1.1.0 released · next: the user's tmux check, then Stack D (sidebar, 1.2.0) |
 | **Updated** | 2026-11-18 |
 | **Tracker** | — |
 | **Related** | [switchboard plan](topih3-switchboard.md) (S10, the event mapping); [design](../superpowers/specs/2026-11-18-switchboard-design.md) |
@@ -19,9 +19,9 @@ switchboard tracks Codex and Pi agents alongside Claude Code. Each agent's event
 
 ### Done when
 
-- [ ] switchboard 1.1.0 is released through the tap, with CI green.
+- [x] switchboard 1.1.0 is released through the tap, with CI green.
 - [x] The README has an "Adding an agent" guide.
-- [ ] The ai-toolkit Pi extension and Codex hooks are merged and installed on this machine.
+- [x] The ai-toolkit Pi extension and Codex hooks are merged and installed on this machine.
 - [ ] In the user's tmux:
   - a Pi session shows and alerts ✓ when its run ends
   - a worktree with two agents needing you shows `▲²`
@@ -132,7 +132,7 @@ switchboard tracks Codex and Pi agents alongside Claude Code. Each agent's event
 
 - [x] S1: core, agents package, label, state, guard
 - [x] S2: Codex and Pi adapters
-- [ ] S3: README and 1.1.0
+- [x] S3: README and 1.1.0
 
 **S1** (S2–S6):
 - **What changes:**
@@ -185,7 +185,7 @@ A single PR in `wmxscott/ai-toolkit` (S8):
 
 It merges after 1.1.0 is in the tap. Then add `codex plugin add switchboard@ai-toolkit` to the private `shared:codex` mise task.
 
-- [ ] X1: Codex hooks
+- [x] X1: Codex hooks
 
 ### Stack P: ai-toolkit Pi extension
 
@@ -203,7 +203,7 @@ It merges after 1.1.0 is in the tap.
 
 **Note on X and P:** they're built in parallel but both touch ai-toolkit's root `README.md`, so they're not strictly independent. Whichever lands second merges `main` and resolves the README rows.
 
-- [ ] P1: Pi extension
+- [x] P1: Pi extension
 
 ### Stack D: sidebar (1.2.0)
 
@@ -250,3 +250,4 @@ The advisor isn't available, so here's my own case against the plan.
 - 2026-11-18: plan written from the Codex and Pi research and the user's decisions: superscripts, no Codex wrapper, adapters in `agents/`.
 - 2026-11-18: C1 landed as #12, S1a as #13 and S1b as #14. X1 is ai-toolkit#35 and P1 is ai-toolkit#36, both open and waiting for 1.1.0. Plan amended with S12 and Stack D, the sidebar the user asked for (stays in its window, `prefix b`).
 - 2026-11-18: S2 landed as #16. S3 (README and the 1.1.0 bump) opened; the tag waits for the picker look pass so 1.1.0 carries both.
+- 2026-11-18: S3 landed as #17, and the picker look pass (shared with wkt 2.3.0) as #18. Released 1.1.0 (tap#18; wkt 2.3.0 is tap#19). X1 landed as ai-toolkit#35 and P1 as #36, installed here; the private `shared:codex` task installs the plugin (dotfiles-private#6).
