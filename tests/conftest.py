@@ -186,6 +186,17 @@ class Repos:
             git("-C", root, "worktree", "add", "-q", branch, branch)
         return root
 
+    def slow(self, path: Path, seconds: int = 3) -> None:
+        """Makes `git status` in `path` take `seconds`, through an fsmonitor hook that sleeps."""
+        hook = self.root / f"{path.name}-fsmonitor"
+        hook.write_text(f"#!/bin/sh\nsleep {seconds}\n")
+        hook.chmod(0o755)
+        git("-C", path, "config", "core.fsmonitor", hook)
+
+    def commit(self, path: Path, count: int = 1) -> None:
+        for n in range(count):
+            git("-C", path, "commit", "-q", "--allow-empty", "-m", f"commit {n}")
+
 
 @pytest.fixture
 def repos(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Repos:

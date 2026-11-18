@@ -16,11 +16,15 @@ def tmux(*commands: Sequence[str]) -> str | None:
     return output("tmux", *args) if args else None
 
 
-def output(*argv: str) -> str | None:
+def output(*argv: str, timeout: float | None = None) -> str | None:
     """Its output, or None when it can't start, fails or is too slow."""
     try:
         result = subprocess.run(
-            argv, capture_output=True, encoding="utf-8", errors="replace", timeout=TIMEOUT
+            argv,
+            capture_output=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=TIMEOUT if timeout is None else timeout,
         )
     except (OSError, subprocess.SubprocessError):
         return None

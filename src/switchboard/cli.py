@@ -13,6 +13,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return cmd_hook(argv[1:])
     if argv[:1] in (["__rows"], ["__fold"]):
         return cmd_picker_reload(argv)
+    if argv[:1] == ["__preview"]:
+        return cmd_preview(argv[1:])
     return _main(argv)
 
 
@@ -85,6 +87,18 @@ def cmd_picker_reload(argv: list[str]) -> int:
         sys.stdout.write(picker.rows(argv[1]))
     else:
         print(picker.fold(argv[1], argv[2]))
+    return 0
+
+
+def cmd_preview(args: list[str]) -> int:
+    """The picker's preview, `__preview <session>`, sized by fzf's `$FZF_PREVIEW_LINES`."""
+    import os
+
+    from switchboard import preview
+
+    lines = os.environ.get("FZF_PREVIEW_LINES", "")
+    height = int(lines) if lines.isdecimal() else preview.HEIGHT
+    sys.stdout.write(preview.show(args[0] if args else "", height))
     return 0
 
 

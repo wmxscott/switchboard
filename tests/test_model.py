@@ -8,7 +8,7 @@ from pathlib import Path
 from conftest import git, real
 
 from switchboard import model
-from switchboard.git import Worktree
+from switchboard.git import Status, Worktree
 from switchboard.projects import Label, Project
 from switchboard.tmux import Pane, Session
 
@@ -166,6 +166,30 @@ def test_rows_carry_their_agents_and_most_urgent_state(stubs, repos):
     assert [agent.id for agent in rows["w/main"].agents] == ["%0", "%1"]
     assert rows["w/zed"].agents == ()
     assert repo.counts == {"needs": 1, "done": 1, "idle": 1}
+
+
+def test_rows_carry_git_status_and_a_slow_or_failing_lookup_leaves_its_row_without(
+    stubs, repos, monkeypatch
+):
+    monkeypatch.setattr("switchboard.git.STATUS_TIMEOUT", 0.3)
+    origin = repos.origin("widget")
+    names = ("clean", "dirty", "ahead", "slow", "broken")
+    paths = [repos.clone(origin, name) for name in names]
+    _, dirty, ahead, slow, broken = paths
+    (dirty / "new").write_text("a")
+    repos.commit(ahead, 2)
+    repos.slow(slow)
+    (broken / ".git/index").write_text("not an index")
+    stubs.tmux.answer("list-sessions", stdout=sessions_text(*((p.name, "", p) for p in paths)))
+    found = model.load()
+    assert {row.session.name: row.status for repo in found.repos for row in repo.rows} == {
+        "clean": Status(0, 0),
+        "dirty": Status(1, 0),
+        "ahead": Status(0, 2),
+        "slow": None,
+        "broken": None,
+    }
+    assert all(row.worktree for repo in found.repos for row in repo.rows)
 
 
 def test_no_server_is_an_empty_model(stubs):

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import itertools
 import json
 import re
@@ -13,7 +14,7 @@ import tempfile
 import pytest
 
 from switchboard import cli, model, picker
-from switchboard.git import Worktree
+from switchboard.git import Status, Worktree
 from switchboard.model import Model, Repo, Row
 from switchboard.projects import Label
 from switchboard.tmux import Pane, Session
@@ -156,6 +157,30 @@ def test_long_names_stop_aligning_the_icons():
     assert fields(picker.lines(picker.render(found, "")))[1][2] == f"│   {long}  ✓"
 
 
+def test_git_status_sits_dim_between_the_branch_and_the_icon():
+    rows = [
+        worktree("w/main", "main", "/w", (1, "lead", "done")),
+        worktree("w/feat", "feat/x", "/w"),
+        worktree("w/zed", "zed", "/w", (1, "lead", "idle")),
+        worktree("w/slow", "slow", "/w", (1, "lead", "working")),
+    ]
+    statuses = (Status(2, 13), Status(0, 1), Status(0, 0), None)
+    rows = [dataclasses.replace(row, status=s) for row, s in zip(rows, statuses, strict=True)]
+    lines = [
+        line.split("\t")[2]
+        for line in picker.lines(picker.render(Model((Repo("/w", "w", "main", tuple(rows)),)), ""))
+    ]
+    assert [plain(line) for line in lines if "claude" not in line] == [
+        "▾ w  1 done · 1 working",
+        "│   main    ~2 ↑13  ✓",
+        "│   feat/x  ↑1",
+        "│   zed             ○",
+        "│   slow            ●",
+    ]
+    assert "\x1b[90m~2 ↑13\x1b[0m" in lines[1]
+    assert "\x1b[90m↑1\x1b[0m" in lines[3]
+
+
 def test_keys(picking):
     stubs = picking
     stubs.fzf.reply(code=130)
@@ -167,6 +192,7 @@ def test_keys(picking):
     assert "--delimiter=\t" in args
     assert "--with-nth=3" in args
     assert "--with-shell=sh -c" in args
+    assert "--preview-window=right,45%,border-left,noinfo" in args
     keys = bindings(args)
     assert args[args.index(KEYS) - 1] == "--bind"
     assert keys["enter"] == "transform:[ -n {1} ] && echo accept"
@@ -320,6 +346,15 @@ def test_tab_folds_and_keeps_the_cursor_on_the_header(cache):
 def test_tab_while_searching_reloads_without_moving_the_cursor(cache, monkeypatch):
     monkeypatch.setenv("FZF_QUERY", "zed")
     assert picker.fold(cache, "1").startswith("reload:")
+
+
+@pytest.mark.parametrize(("session", "out"), [("'w/main'", "w/main\n"), ("''", "")])
+def test_the_preview_runs_through_its_hidden_command(stubs, session, out):
+    stubs.tmux.answer("*", code=1, stderr="no server running\n")
+    (command,) = [arg for arg in picker.fzf_args("/f", None) if arg.startswith("--preview=")]
+    command = command.removeprefix("--preview=")
+    assert shlex.split(command)[:4] == [sys.executable, "-m", "switchboard", "__preview"]
+    assert plain(sh(command.replace("{1}", session))) == out
 
 
 def test_tab_binding_runs_through_the_hidden_commands(cache):
