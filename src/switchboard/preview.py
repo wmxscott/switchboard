@@ -9,7 +9,7 @@ from dataclasses import dataclass
 
 from switchboard import panestate as ps
 from switchboard import run
-from switchboard.picker import BOLD, CYAN, DIM, ICON, SGR, describe, sgr
+from switchboard.picker import BOLD, CURRENT, DIM, HERE, ICON, SGR, describe, sgr
 from switchboard.tmux import Pane
 
 HEIGHT = 40
@@ -79,7 +79,7 @@ def layout(session: str) -> Layout | None:
 
 
 def _window(window: Window, panes: tuple[Pane, ...]) -> str:
-    mark = sgr(CYAN, "▸") if window.active else " "
+    mark = sgr(CURRENT, HERE) if window.active else " "
     state = ps.most_urgent(p.state for p in panes if p.window == window.index and p.is_agent)
     icon = f" {sgr(SGR[state], ICON[state])}" if state else ""
     return f"{mark} {window.index} {window.name}{icon}"

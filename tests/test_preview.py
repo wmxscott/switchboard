@@ -8,13 +8,25 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 from switchboard import preview
 
+DOT, FILL, HERE = "\uf4c3", "\uf444", "\uf192"
 FORMAT = (
     "#{session_path}\t#{window_index}\t#{window_active}\t#{pane_id}\t#{pane_active}"
     "\t#{pane_current_command}\t#{@switchboard-role}\t#{@switchboard-turn}"
     "\t#{@switchboard-pending}\t#{@switchboard-at}\t#{@switchboard-agent}\t#{window_name}"
 )
+
+
+@pytest.fixture(autouse=True)
+def dark(monkeypatch):
+    monkeypatch.setenv("SWITCHBOARD_THEME", "dark")
+
+
+def esc(code: str, text: str) -> str:
+    return f"\x1b[{code}m{text}\x1b[0m"
 
 
 def plain(text: str) -> str:
@@ -49,18 +61,20 @@ def test_a_session_with_agents_shows_the_most_urgent_ones_last_lines(stubs):
         "~/src/widget",
         "",
         "windows",
-        "▸ 0 shell",
-        "  1 claude ✓",
-        "  2 team\tnotes ▲",
+        f"{HERE} 0 shell",
+        f"  1 claude {FILL}",
+        f"  2 team\tnotes {FILL}",
         "",
         "claude · win 2 · needs you",
         "older",
         "  Allow make test?",
         "  1. Yes",
     ]
-    assert shown.startswith("\x1b[1mw/main\x1b[0m\n\x1b[90m~/src/widget\x1b[0m\n")
-    assert "\x1b[36m▸\x1b[0m 0 shell\n" in shown
-    assert "  2 team\tnotes \x1b[33m▲\x1b[0m\n" in shown
+    bold, path = esc("1;38;2;202;211;245", "w/main"), esc("38;2;165;173;203", "~/src/widget")
+    assert shown.startswith(f"{bold}\n{path}\n")
+    assert f"{esc('1;38;2;166;218;149', HERE)} 0 shell\n" in shown
+    assert f"  1 claude {esc('38;2;166;218;149', FILL)}\n" in shown
+    assert f"  2 team\tnotes {esc('38;2;237;135;150', FILL)}\n" in shown
     assert stubs.tmux.calls() == [
         ["list-panes", "-s", "-t", "=w/main", "-F", FORMAT],
         ["capture-pane", "-p", "-J", "-t", "%4", "-S", "-11"],
@@ -93,7 +107,7 @@ def test_a_session_without_agents_shows_its_active_pane(stubs):
         "",
         "windows",
         "  1 shell",
-        "▸ 2 build",
+        f"{HERE} 2 build",
         "",
         "make · win 2",
         "line 26",
@@ -113,7 +127,13 @@ def test_no_room_left_skips_the_capture(stubs):
     stubs.tmux.answer(
         "list-panes", stdout=listing("/srv", (0, 1, "%1", 1, "claude", "lead", "idle", "", "c"))
     )
-    assert plain(preview.show("s", 6)).splitlines() == ["s", "/srv", "", "windows", "▸ 0 c ○"]
+    assert plain(preview.show("s", 6)).splitlines() == [
+        "s",
+        "/srv",
+        "",
+        "windows",
+        f"{HERE} 0 c {DOT}",
+    ]
     assert [call[0] for call in stubs.tmux.calls()] == ["list-panes"]
 
 
@@ -122,11 +142,17 @@ def test_tmux_failing_shows_what_there_is(stubs):
         "list-panes", stdout=listing("/srv", (0, 1, "%1", 1, "zsh", "", "", "", "shell"))
     )
     stubs.tmux.answer("capture-pane", code=1, stderr="can't find pane: %1\n")
-    assert plain(preview.show("s", 20)).splitlines() == ["s", "/srv", "", "windows", "▸ 0 shell"]
+    assert plain(preview.show("s", 20)).splitlines() == [
+        "s",
+        "/srv",
+        "",
+        "windows",
+        f"{HERE} 0 shell",
+    ]
     stubs.tmux.answer("list-panes", code=1, stderr="can't find session: s\n")
-    assert preview.show("s", 20) == "\x1b[1ms\x1b[0m\n"
+    assert preview.show("s", 20) == f"{esc('1;38;2;202;211;245', 's')}\n"
     stubs.tmux.answer("list-panes", stdout="garbage\n0\t1\n")
-    assert preview.show("s", 20) == "\x1b[1ms\x1b[0m\n"
+    assert preview.show("s", 20) == f"{esc('1;38;2;202;211;245', 's')}\n"
 
 
 def test_the_command_is_quiet_and_sized_by_fzf(stubs):
@@ -135,7 +161,7 @@ def test_the_command_is_quiet_and_sized_by_fzf(stubs):
     command = [sys.executable, "-m", "switchboard", "__preview", "w/main"]
     result = subprocess.run(command, capture_output=True, text=True, env=env, timeout=30)
     assert (result.returncode, result.stderr) == (0, "")
-    assert plain(result.stdout).splitlines()[:5] == ["w/main", "/srv", "", "windows", "▸ 0 z"]
+    assert plain(result.stdout).splitlines()[:5] == ["w/main", "/srv", "", "windows", f"{HERE} 0 z"]
     assert stubs.tmux.calls()[1][-2:] == ["-S", "-23"]
     stubs.tmux.answer("list-panes", code=1, stderr="no server running\n")
     result = subprocess.run(command, capture_output=True, text=True, env=env, timeout=30)

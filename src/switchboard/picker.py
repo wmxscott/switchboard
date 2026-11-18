@@ -20,24 +20,30 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from switchboard import panestate as ps
-from switchboard import run
+from switchboard import run, theme
 
 if TYPE_CHECKING:
     from switchboard.model import Model, Row
     from switchboard.tmux import Pane
 
 MIN_FZF = (0, 59)
-KEYS = "j:down,k:up,/:show-input+unbind(j,k,/)"
-HINT = "j/k move · / search · tab fold · enter switch · esc close"
-COLOURS = "16,pointer:cyan,header:bright-black,info:bright-black,prompt:cyan,border:bright-black"
+KEYS = "j:down,k:up,q:abort"
+SEARCH_KEYS = "show-input+unbind(j,k,/,q)"
+BACK_KEYS = "clear-query+search()+hide-input+rebind(j,k,/,q)"
+HINT = "j/k move · / search · tab fold · ↵ switch · q/esc close"
+SEARCH_HINT = "↑/↓ move · tab fold · ↵ switch · esc back"
 LOOK = ("--layout=reverse", "--height=100%", "--border=none", "--margin=0", "--padding=0")
-PREVIEW = "right,45%,border-left,noinfo"
+PREVIEW = "right,60%,border-left,noinfo"
 
-ICON = {ps.NEEDS: "▲", ps.DONE: "✓", ps.WORKING: "●", ps.IDLE: "○"}
+DOT, DOT_FILL = "\uf4c3", "\uf444"  # nf-oct-dot, nf-oct-dot_fill
+OPEN, SHUT = "\uf0d7", "\uf0da"  # nf-fa-caret_down, nf-fa-caret_right
+HERE = "\uf192"  # nf-fa-circle_dot
+ICON = {ps.NEEDS: DOT_FILL, ps.DONE: DOT_FILL, ps.WORKING: DOT_FILL, ps.IDLE: DOT}
 WORD = {ps.NEEDS: "needs you", ps.DONE: "done", ps.WORKING: "working", ps.IDLE: "idle"}
-SGR = {ps.NEEDS: "33", ps.DONE: "32", ps.WORKING: "34", ps.IDLE: "90"}
+SGR = {ps.NEEDS: "red", ps.DONE: "green", ps.WORKING: "peach", ps.IDLE: "green"}
 SUMMED = (ps.NEEDS, ps.DONE, ps.WORKING)
-BOLD, DIM, CYAN = "1", "90", "36"
+TEXT, BOLD, DIM, LINE = "text", "bold text", "subtext0", "overlay1"
+MUTED, CURRENT = "dim overlay0", "bold green"
 WIDTH = 40
 
 MODEL, FOLDED = "model.json", "folded.json"
@@ -60,6 +66,8 @@ def pick() -> int:
         raise PickerError("can't find the tmux client to switch")
     from switchboard import model
 
+    # The preview, which fzf runs, inherits it.
+    os.environ[theme.ENV] = theme.detect()
     groups = render(model.load(), current)
     folder = tempfile.mkdtemp(prefix="switchboard-")
     try:
@@ -102,21 +110,27 @@ def pinned() -> tuple[str, str]:
 
 
 def fzf_args(folder: str, at: int | None) -> list[str]:
+    """Search starts off: `/` shows the input line, and Esc then clears it and goes back."""
     fold = shlex.join([*_self(), "__fold", folder])
     preview = shlex.join([*_self(), "__preview"])
+    back = shlex.quote(f"{BACK_KEYS}+change-header:{_hints(HINT)}")
     args = [
         "--ansi",
         "--no-sort",
         *LOOK,
         "--no-info",
+        "--prompt=> ",
         "--no-input",
         "--bind",
         KEYS,
+        "--bind",
+        f"/:{SEARCH_KEYS}+change-header:{_hints(SEARCH_HINT)}",
+        "--bind",
+        f'esc:transform:[ "$FZF_INPUT_STATE" = enabled ] && printf %s {back} || echo abort',
         "--delimiter=\t",
         "--with-nth=3",
         "--with-shell=sh -c",
-        f"--color={COLOURS}",
-        f"--header={HINT}",
+        f"--header={_hints(HINT)}",
         f"--preview={preview} {{1}}",
         f"--preview-window={PREVIEW}",
         "--bind",
@@ -152,8 +166,8 @@ def render(found: Model, current: str) -> list[Group]:
             ]
         groups.append(
             {
-                "open": _line("", index, _header("▾", title, counts)),
-                "shut": _line("", index, _header("▸", title, counts)),
+                "open": _line("", index, _header(OPEN, title, counts)),
+                "shut": _line("", index, _header(SHUT, title, counts)),
                 "rows": body,
             }
         )
@@ -195,21 +209,27 @@ def fold(folder: str, group: str) -> str:
     return f"pos({header})+{reload}"
 
 
-def _header(arrow: str, title: str, counts: Mapping[str, int]) -> str:
+def _hints(text: str) -> str:
+    """fzf's header: the hints between blank rows."""
+    return f" \n{sgr(MUTED, text)}\n "
+
+
+def _header(caret: str, title: str, counts: Mapping[str, int]) -> str:
     shown = [(state, counts.get(state, 0)) for state in SUMMED]
     parts = [sgr(SGR[state], f"{n} {WORD[state]}") for state, n in shown if n]
-    summary = "  " + sgr(DIM, " · ").join(parts) if parts else ""
-    return f"{arrow} {sgr(BOLD, title)}{summary}"
+    summary = "  " + sgr(LINE, " · ").join(parts) if parts else ""
+    return f"{sgr(TEXT, caret)} {sgr(BOLD, title)}{summary}"
 
 
 def _worktree(row: Row, current: str, width: int, status_width: int) -> str:
-    mark = sgr(CYAN, "▸") if row.session.name == current else " "
+    mark = sgr(CURRENT, HERE) if row.session.name == current else " "
     state = row.state
     icon = sgr(SGR[state], ICON[state]) if state else ""
     status = _status(row)
     column = sgr(DIM, status) + " " * (status_width - len(status)) if status else " " * status_width
     gap = "  " if status_width else ""
-    return f"{sgr(DIM, '│')} {mark} {_name(row).ljust(width)}{gap}{column}  {icon}".rstrip()
+    name = sgr(TEXT, _name(row)) + " " * (width - len(_name(row)))
+    return f"{sgr(LINE, '│')} {mark} {name}{gap}{column}  {icon}".rstrip()
 
 
 def _status(row: Row) -> str:
@@ -221,7 +241,8 @@ def _status(row: Row) -> str:
 
 
 def _agent(agent: Pane, last: bool) -> str:
-    return sgr(DIM, f"│   {'└' if last else '├'} {describe(agent)}")
+    tree = sgr(LINE, f"│   {'└' if last else '├'}")
+    return f"{tree} {sgr(SGR[agent.state], ICON[agent.state])} {sgr(DIM, describe(agent))}"
 
 
 def describe(agent: Pane) -> str:
@@ -237,8 +258,8 @@ def _line(session: str, group: int, display: str) -> str:
     return f"{session}\t{group}\t{display}"
 
 
-def sgr(code: str, text: str) -> str:
-    return f"\033[{code}m{text}\033[0m"
+def sgr(style: str, text: str) -> str:
+    return f"\033[{theme.sgr(style)}m{text}\033[0m"
 
 
 def _self() -> list[str]:
