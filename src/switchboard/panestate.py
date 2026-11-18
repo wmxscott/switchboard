@@ -1,6 +1,7 @@
-"""The pane options that hold a Claude agent's state: the hook writes them, the rest read them.
+"""The pane options that hold an agent's state: the hook writes them, the rest read them.
 
-`@switchboard-at` holds Unix seconds. The hook imports this module, so it imports nothing heavy.
+`@switchboard-at` holds Unix seconds, and `@switchboard-agent` the agent's name. The hook imports
+this module, so it imports nothing heavy.
 """
 
 from __future__ import annotations
@@ -11,7 +12,10 @@ ROLE = "@switchboard-role"
 TURN = "@switchboard-turn"
 PENDING = "@switchboard-pending"
 AT = "@switchboard-at"
-OPTIONS = (ROLE, TURN, PENDING, AT)
+AGENT = "@switchboard-agent"
+OPTIONS = (ROLE, TURN, PENDING, AT, AGENT)
+
+CLAUDE = "claude"
 
 LEAD = "lead"
 TEAMMATE = "teammate"

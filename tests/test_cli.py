@@ -38,7 +38,7 @@ def test_help_lists_the_commands():
     result = run("--help")
     assert result.returncode == 0
     assert result.stdout.startswith("usage: switchboard")
-    for command in ("hook", "seen", "refresh"):
+    for command in ("hook", "state", "seen", "refresh"):
         assert command in result.stdout
 
 
@@ -58,6 +58,31 @@ def test_hook_is_silent(stubs, monkeypatch, payload, inside_tmux):
 def test_hook_is_silent_on_bad_arguments(stubs, args):
     result = run("hook", *args, stdin=STOP)
     assert (result.returncode, result.stdout, result.stderr) == (0, "", "")
+    assert stubs.tmux.calls() == []
+
+
+@pytest.mark.parametrize("args", [["working"], ["needs", "a1", "--agent", "pi"], ["end"]])
+@pytest.mark.parametrize("inside_tmux", [False, True])
+def test_state_is_silent(stubs, monkeypatch, args, inside_tmux):
+    """Inside tmux, tmux fails: no server answers."""
+    if inside_tmux:
+        monkeypatch.setenv("TMUX", "/nonexistent/stub,1,0")
+        monkeypatch.setenv("TMUX_PANE", "%1")
+        stubs.tmux.answer("*", code=1, stderr="no server running\n")
+    result = run("state", *args)
+    assert (result.returncode, result.stdout, result.stderr) == (0, "", "")
+    if not inside_tmux:
+        assert stubs.tmux.calls() == []
+
+
+def test_state_with_malformed_arguments_exits_2_with_one_line(stubs, monkeypatch):
+    monkeypatch.setenv("TMUX_PANE", "%1")
+    result = run("state", "needs")
+    assert (result.returncode, result.stdout) == (2, "")
+    assert result.stderr == (
+        "usage: switchboard state"
+        " <start|working|done|idle|needs KEY|resolve KEY|all|end> [--agent NAME]\n"
+    )
     assert stubs.tmux.calls() == []
 
 

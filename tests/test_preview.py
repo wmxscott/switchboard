@@ -13,7 +13,7 @@ from switchboard import preview
 FORMAT = (
     "#{session_path}\t#{window_index}\t#{window_active}\t#{pane_id}\t#{pane_active}"
     "\t#{pane_current_command}\t#{@switchboard-role}\t#{@switchboard-turn}"
-    "\t#{@switchboard-pending}\t#{@switchboard-at}\t#{window_name}"
+    "\t#{@switchboard-pending}\t#{@switchboard-at}\t#{@switchboard-agent}\t#{window_name}"
 )
 
 
@@ -23,11 +23,11 @@ def plain(text: str) -> str:
 
 def listing(path: str | Path, *panes: tuple) -> str:
     """Each pane is a window index, window active, pane id, pane active, command, role, turn,
-    pending keys and window name."""
+    pending keys and window name, then maybe the agent's label."""
     return "".join(
         f"{path}\t{window}\t{window_on}\t{pane}\t{pane_on}\t{command}\t{role}\t{turn}\t{pending}"
-        f"\t0\t{name}\n"
-        for window, window_on, pane, pane_on, command, role, turn, pending, name in panes
+        f"\t0\t{''.join(agent)}\t{name}\n"
+        for window, window_on, pane, pane_on, command, role, turn, pending, name, *agent in panes
     )
 
 
@@ -65,6 +65,15 @@ def test_a_session_with_agents_shows_the_most_urgent_ones_last_lines(stubs):
         ["list-panes", "-s", "-t", "=w/main", "-F", FORMAT],
         ["capture-pane", "-p", "-J", "-t", "%4", "-S", "-11"],
     ]
+
+
+def test_an_agents_pane_is_named_by_its_label(stubs):
+    stubs.tmux.answer(
+        "list-panes",
+        stdout=listing("/srv", (0, 1, "%1", 1, "node", "lead", "done", "", "pi", "pi")),
+    )
+    stubs.tmux.answer("capture-pane", stdout="ok\n")
+    assert plain(preview.show("s", 20)).splitlines()[-2:] == ["pi · win 0 · done", "ok"]
 
 
 def test_a_session_without_agents_shows_its_active_pane(stubs):

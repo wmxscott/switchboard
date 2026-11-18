@@ -135,6 +135,15 @@ def test_rows_by_repo_with_agents_and_other():
     assert picker.cursor(groups, "gone") is None
 
 
+@pytest.mark.parametrize(
+    ("role", "agent", "who"),
+    [("lead", "pi", "pi"), ("lead", "", "claude"), ("teammate", "codex", "teammate")],
+)
+def test_an_agent_row_names_its_agent(role, agent, who):
+    pane = Pane("s", 2, "%2", "node", role, "working", agent=agent)
+    assert picker.describe(pane) == f"{who} · win 2 · working"
+
+
 def test_row_colours():
     lines = [line.split("\t")[2] for line in picker.lines(picker.render(fixture(), "w/main"))]
     assert "\x1b[1mgadget\x1b[0m" in lines[0]

@@ -2,7 +2,9 @@
 
 An adapter is a module in this package, named for its agent: `switchboard hook --agent pi`
 loads `agents/pi.py`, and an unknown name does nothing. It never runs tmux, which is
-`switchboard.core`'s job. It has:
+`switchboard.core`'s job. For any agent but Claude, an event is dropped unless the hook runs
+inside the pane, as a descendant of its process. A tool with no adapter can run the verbs with
+`switchboard state <verb> [--agent NAME]`. An adapter has:
 
 `HANDLED`
     The event names it acts on. Any other event is dropped before tmux is touched.

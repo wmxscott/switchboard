@@ -56,4 +56,5 @@ def test_option_names():
         "@switchboard-turn",
         "@switchboard-pending",
         "@switchboard-at",
+        "@switchboard-agent",
     )

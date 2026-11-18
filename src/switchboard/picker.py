@@ -225,7 +225,7 @@ def _agent(agent: Pane, last: bool) -> str:
 
 
 def describe(agent: Pane) -> str:
-    who = "teammate" if agent.role == ps.TEAMMATE else "claude"
+    who = "teammate" if agent.role == ps.TEAMMATE else agent.agent or ps.CLAUDE
     return f"{who} · win {agent.window} · {WORD[agent.state]}"
 
 
