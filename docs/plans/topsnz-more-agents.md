@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | in progress · next: S1, C1, X1, P1 (parallel) |
+| **Status** | in progress · next: release 1.1.0 (S3), then X1 and P1, then Stack D |
 | **Updated** | 2026-11-18 |
 | **Tracker** | — |
 | **Related** | [switchboard plan](topih3-switchboard.md) (S10, the event mapping); [design](../superpowers/specs/2026-11-18-switchboard-design.md) |
@@ -20,7 +20,7 @@ switchboard tracks Codex and Pi agents alongside Claude Code. Each agent's event
 ### Done when
 
 - [ ] switchboard 1.1.0 is released through the tap, with CI green.
-- [ ] The README has an "Adding an agent" guide.
+- [x] The README has an "Adding an agent" guide.
 - [ ] The ai-toolkit Pi extension and Codex hooks are merged and installed on this machine.
 - [ ] In the user's tmux:
   - a Pi session shows and alerts ✓ when its run ends
@@ -130,8 +130,8 @@ switchboard tracks Codex and Pi agents alongside Claude Code. Each agent's event
 | S2 | `agents/codex.py` and `agents/pi.py`, with tests | S1 |
 | S3 | README (the "Adding an agent" guide, Codex and Pi setup, counts) and release 1.1.0 | S2, C1 |
 
-- [ ] S1: core, agents package, label, state, guard
-- [ ] S2: Codex and Pi adapters
+- [x] S1: core, agents package, label, state, guard
+- [x] S2: Codex and Pi adapters
 - [ ] S3: README and 1.1.0
 
 **S1** (S2–S6):
@@ -165,7 +165,7 @@ switchboard tracks Codex and Pi agents alongside Claude Code. Each agent's event
 |---|---|---|
 | C1 | Superscript per-agent counts in `@attention` (S7) | — |
 
-- [ ] C1: status counts
+- [x] C1: status counts
 
 **C1:**
 - *Shippable when:* the tests cover a single agent (unchanged), `▲³`, `▲²✓`, `✓²`, sessions sitting in the needs group, colours per icon, the budget measured with the counts included, and counts mode unchanged.
@@ -249,3 +249,4 @@ The advisor isn't available, so here's my own case against the plan.
 
 - 2026-11-18: plan written from the Codex and Pi research and the user's decisions: superscripts, no Codex wrapper, adapters in `agents/`.
 - 2026-11-18: C1 landed as #12, S1a as #13 and S1b as #14. X1 is ai-toolkit#35 and P1 is ai-toolkit#36, both open and waiting for 1.1.0. Plan amended with S12 and Stack D, the sidebar the user asked for (stays in its window, `prefix b`).
+- 2026-11-18: S2 landed as #16. S3 (README and the 1.1.0 bump) opened; the tag waits for the picker look pass so 1.1.0 carries both.
