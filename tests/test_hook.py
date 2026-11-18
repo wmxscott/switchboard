@@ -288,9 +288,21 @@ def test_a_malformed_payload_exits_0_silently(stubs, payload):
     assert stubs.tmux.calls() == []
 
 
+PATIENT = "import sys; from switchboard import cli, run; run.TIMEOUT = 60; sys.exit(cli.main())"
+
+
 def test_a_failing_tmux_exits_0_silently(stubs):
+    """Through `cli.main` with a long tmux timeout: under the usual 2 seconds, a stub slow to start
+    is killed before it logs the read."""
     stubs.tmux.answer("*", code=1, stderr="no server running\n")
-    result = script("PermissionRequest", "{}")
+    result = subprocess.run(
+        [sys.executable, "-c", PATIENT, "hook", "PermissionRequest"],
+        input="{}",
+        capture_output=True,
+        text=True,
+        timeout=90,
+        env={**os.environ, "TMUX_PANE": PANE},
+    )
     assert (result.returncode, result.stdout, result.stderr) == (0, "", "")
     assert stubs.tmux.calls() == [READ]
 

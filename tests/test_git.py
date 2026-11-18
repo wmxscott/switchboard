@@ -136,6 +136,18 @@ def test_without_an_upstream_ahead_is_the_commits_on_no_origin_branch(repos):
     assert status(str(clone)) == Status(0, 3)
 
 
+def test_without_any_origin_branches_there_is_no_ahead(repos):
+    alone = repos.origin("alone")
+    repos.commit(alone, 2)
+    (alone / "new").write_text("a")
+    assert git("-C", alone, "remote") == ""
+    assert status(str(alone)) == Status(1, 0)
+    unfetched = repos.origin("unfetched")
+    git("-C", unfetched, "remote", "add", "origin", alone)
+    assert git("-C", unfetched, "for-each-ref", "refs/remotes/origin") == ""
+    assert status(str(unfetched)) == Status(0, 0)
+
+
 def test_a_slow_status_gives_none_at_the_timeout(repos, monkeypatch):
     monkeypatch.setattr("switchboard.git.STATUS_TIMEOUT", 0.3)
     clone = repos.clone(repos.origin("widget"), "widget")

@@ -18,6 +18,7 @@ STATUS_TIMEOUT = 1.0
 REV_PARSE = ("rev-parse", "--path-format=absolute", "--git-common-dir")
 REFS_FORMAT = "--format=%(HEAD)%09%(refname)%09%(symref)"
 STATUS = ("--no-optional-locks", "status", "--porcelain=v2", "--branch")
+ORIGIN = ("for-each-ref", "--count=1", "--format=%(refname)", "refs/remotes/origin")
 UNPUSHED = ("rev-list", "--count", "HEAD", "--not", "--remotes=origin")
 
 T = TypeVar("T")
@@ -76,16 +77,24 @@ def status(root: str) -> Status | None:
     out = _git("-C", root, *STATUS, timeout=STATUS_TIMEOUT)
     if out is None:
         return None
-    ahead = [line.split()[2] for line in out if line.startswith("# branch.ab ")]
-    if not ahead:
-        ahead = _git("-C", root, *UNPUSHED, timeout=end - time.monotonic()) or []
+    upstream = [int(line.split()[2]) for line in out if line.startswith("# branch.ab ")]
+    ahead = upstream[0] if upstream else _unpushed(root, end)
     changed = sum(not line.startswith("#") for line in out)
-    return Status(changed, int(ahead[0])) if ahead else None
+    return None if ahead is None else Status(changed, ahead)
 
 
 def statuses(roots: Iterable[str]) -> dict[str, Status | None]:
     """`status` of each worktree, all at once: the wait is about the slowest one's."""
     return each(status, roots, STATUS_WORKERS)
+
+
+def _unpushed(root: str, end: float) -> int | None:
+    """Commits on no origin branch; 0 when there are no origin branches to compare against."""
+    origin = _git("-C", root, *ORIGIN, timeout=end - time.monotonic())
+    if not origin:
+        return None if origin is None else 0
+    counted = _git("-C", root, *UNPUSHED, timeout=end - time.monotonic())
+    return int(counted[0]) if counted else None
 
 
 def repo_name(repo: str) -> str:
