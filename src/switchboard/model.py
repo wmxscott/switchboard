@@ -8,7 +8,7 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 
 from switchboard import git, panestate, projects, tmux
-from switchboard.git import Worktree
+from switchboard.git import Status, Worktree
 from switchboard.projects import Label, Project
 from switchboard.tmux import Pane, Session
 
@@ -18,6 +18,7 @@ class Row:
     session: Session
     worktree: Worktree | None
     agents: tuple[Pane, ...] = ()
+    status: Status | None = None
 
     @property
     def state(self) -> str | None:
@@ -60,11 +61,13 @@ def build(
     agents = tmux.agents_by_session(panes)
     where = {session.name: _where(session) for session in sessions}
     trees = git.each(git.worktree, filter(None, where.values()))
+    statuses = git.statuses(tree.root for tree in trees.values() if tree)
     grouped: dict[str, list[Row]] = defaultdict(list)
     other = []
     for session in sessions:
         tree = trees.get(where[session.name])
-        row = Row(session, tree, agents.get(session.name, ()))
+        status = statuses.get(tree.root) if tree else None
+        row = Row(session, tree, agents.get(session.name, ()), status)
         (grouped[tree.repo] if tree else other).append(row)
     defaults = git.each(git.default_branch, grouped)
     labels = projects.labels(project_list, grouped) if project_list and grouped else {}

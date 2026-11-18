@@ -2,10 +2,23 @@
 
 from __future__ import annotations
 
+import time
+from pathlib import Path
+
 import pytest
 from conftest import git, real
 
-from switchboard.git import Worktree, common_dir, default_branch, each, repo_name, worktree
+from switchboard.git import (
+    Status,
+    Worktree,
+    common_dir,
+    default_branch,
+    each,
+    repo_name,
+    status,
+    statuses,
+    worktree,
+)
 
 
 def test_a_normal_clone(repos):
@@ -81,3 +94,84 @@ def test_each_runs_a_lookup_once_per_distinct_key():
     }
     assert sorted(seen) == ["a", "b"]
     assert each(str.upper, []) == {}
+
+
+def test_status_of_a_clean_pushed_clone(repos):
+    assert status(str(repos.clone(repos.origin("widget"), "widget"))) == Status(0, 0)
+
+
+def test_status_counts_the_lines_of_git_status_porcelain(repos):
+    clone = repos.clone(repos.origin("widget"), "widget")
+    (clone / "untracked").write_text("a")
+    (clone / "staged").write_text("b")
+    git("-C", clone, "add", "staged")
+    (clone / "folder").mkdir()
+    (clone / "folder/inside").write_text("c")
+    assert status(str(clone)) == Status(3, 0)
+    assert len(git("-C", clone, "status", "--porcelain").splitlines()) == 3
+
+
+def test_status_counts_commits_ahead_of_the_upstream(repos):
+    clone = repos.clone(repos.origin("widget"), "widget")
+    repos.commit(clone, 2)
+    (clone / "new").write_text("a")
+    assert status(str(clone)) == Status(1, 2)
+
+
+def test_ahead_is_against_the_upstream_even_when_another_origin_branch_has_the_commits(repos):
+    origin = repos.origin("widget", branches=("feat",))
+    repos.commit(origin)
+    clone = repos.clone(origin, "widget")
+    git("-C", clone, "switch", "-q", "feat")
+    git("-C", clone, "merge", "-q", "--ff-only", "origin/main")
+    assert status(str(clone)) == Status(0, 1)
+
+
+def test_without_an_upstream_ahead_is_the_commits_on_no_origin_branch(repos):
+    clone = repos.clone(repos.origin("widget"), "widget")
+    git("-C", clone, "switch", "-q", "-c", "topic")
+    assert git("-C", clone, "for-each-ref", "--format=%(upstream)", "refs/heads/topic") == ""
+    assert status(str(clone)) == Status(0, 0)
+    repos.commit(clone, 3)
+    assert status(str(clone)) == Status(0, 3)
+
+
+def test_without_any_origin_branches_there_is_no_ahead(repos):
+    alone = repos.origin("alone")
+    repos.commit(alone, 2)
+    (alone / "new").write_text("a")
+    assert git("-C", alone, "remote") == ""
+    assert status(str(alone)) == Status(1, 0)
+    unfetched = repos.origin("unfetched")
+    git("-C", unfetched, "remote", "add", "origin", alone)
+    assert git("-C", unfetched, "for-each-ref", "refs/remotes/origin") == ""
+    assert status(str(unfetched)) == Status(0, 0)
+
+
+def test_a_slow_status_gives_none_at_the_timeout(repos, monkeypatch):
+    monkeypatch.setattr("switchboard.git.STATUS_TIMEOUT", 0.3)
+    clone = repos.clone(repos.origin("widget"), "widget")
+    repos.slow(clone)
+    started = time.monotonic()
+    assert status(str(clone)) is None
+    assert time.monotonic() - started < 1.5
+
+
+def test_a_failing_status_gives_none(repos, tmp_path):
+    clone = repos.clone(repos.origin("widget"), "widget")
+    (clone / ".git/index").write_text("not an index")
+    assert worktree(str(clone)) is not None
+    assert status(str(clone)) is None
+    assert status(str(tmp_path)) is None
+
+
+def test_statuses_run_at_once_so_slow_ones_cost_one_timeout(repos, monkeypatch):
+    monkeypatch.setattr("switchboard.git.STATUS_TIMEOUT", 0.5)
+    origin = repos.origin("widget")
+    clones = [str(repos.clone(origin, f"w{n}")) for n in range(5)]
+    for clone in clones[1:]:
+        repos.slow(Path(clone))
+    started = time.monotonic()
+    found = statuses(clones)
+    assert time.monotonic() - started < 1.5
+    assert found == {clones[0]: Status(0, 0)} | dict.fromkeys(clones[1:])

@@ -29,8 +29,9 @@ if TYPE_CHECKING:
 MIN_FZF = (0, 59)
 KEYS = "j:down,k:up,/:show-input+unbind(j,k,/)"
 HINT = "j/k move · / search · tab fold · enter switch · esc close"
-COLOURS = "16,pointer:cyan,header:bright-black,info:bright-black,prompt:cyan"
+COLOURS = "16,pointer:cyan,header:bright-black,info:bright-black,prompt:cyan,border:bright-black"
 LOOK = ("--layout=reverse", "--height=100%", "--border=none", "--margin=0", "--padding=0")
+PREVIEW = "right,45%,border-left,noinfo"
 
 ICON = {ps.NEEDS: "▲", ps.DONE: "✓", ps.WORKING: "●", ps.IDLE: "○"}
 WORD = {ps.NEEDS: "needs you", ps.DONE: "done", ps.WORKING: "working", ps.IDLE: "idle"}
@@ -102,6 +103,7 @@ def pinned() -> tuple[str, str]:
 
 def fzf_args(folder: str, at: int | None) -> list[str]:
     fold = shlex.join([*_self(), "__fold", folder])
+    preview = shlex.join([*_self(), "__preview"])
     args = [
         "--ansi",
         "--no-sort",
@@ -115,6 +117,8 @@ def fzf_args(folder: str, at: int | None) -> list[str]:
         "--with-shell=sh -c",
         f"--color={COLOURS}",
         f"--header={HINT}",
+        f"--preview={preview} {{1}}",
+        f"--preview-window={PREVIEW}",
         "--bind",
         "enter:transform:[ -n {1} ] && echo accept",
         "--bind",
@@ -133,13 +137,15 @@ def render(found: Model, current: str) -> list[Group]:
     ]
     if found.other:
         named.append(("other", Counter(row.state for row in found.other if row.state), found.other))
-    names = [_name(row) for *_, members in named for row in members]
-    width = min(WIDTH, max(map(len, names), default=0))
+    every = [row for *_, members in named for row in members]
+    width = min(WIDTH, max((len(_name(row)) for row in every), default=0))
+    status_width = max((len(_status(row)) for row in every), default=0)
     groups: list[Group] = []
     for index, (title, counts, members) in enumerate(named):
         body = []
         for row in members:
-            body.append(_line(row.session.name, index, _worktree(row, current, width)))
+            display = _worktree(row, current, width, status_width)
+            body.append(_line(row.session.name, index, display))
             body += [
                 _line(row.session.name, index, _agent(agent, n == len(row.agents) - 1))
                 for n, agent in enumerate(row.agents)
@@ -191,21 +197,36 @@ def fold(folder: str, group: str) -> str:
 
 def _header(arrow: str, title: str, counts: Mapping[str, int]) -> str:
     shown = [(state, counts.get(state, 0)) for state in SUMMED]
-    parts = [_sgr(SGR[state], f"{n} {WORD[state]}") for state, n in shown if n]
-    summary = "  " + _sgr(DIM, " · ").join(parts) if parts else ""
-    return f"{arrow} {_sgr(BOLD, title)}{summary}"
+    parts = [sgr(SGR[state], f"{n} {WORD[state]}") for state, n in shown if n]
+    summary = "  " + sgr(DIM, " · ").join(parts) if parts else ""
+    return f"{arrow} {sgr(BOLD, title)}{summary}"
 
 
-def _worktree(row: Row, current: str, width: int) -> str:
-    mark = _sgr(CYAN, "▸") if row.session.name == current else " "
+def _worktree(row: Row, current: str, width: int, status_width: int) -> str:
+    mark = sgr(CYAN, "▸") if row.session.name == current else " "
     state = row.state
-    icon = _sgr(SGR[state], ICON[state]) if state else ""
-    return f"{_sgr(DIM, '│')} {mark} {_name(row).ljust(width)}  {icon}".rstrip()
+    icon = sgr(SGR[state], ICON[state]) if state else ""
+    status = _status(row)
+    column = sgr(DIM, status) + " " * (status_width - len(status)) if status else " " * status_width
+    gap = "  " if status_width else ""
+    return f"{sgr(DIM, '│')} {mark} {_name(row).ljust(width)}{gap}{column}  {icon}".rstrip()
+
+
+def _status(row: Row) -> str:
+    found = row.status
+    if not found:
+        return ""
+    parts = (f"~{found.changed}" if found.changed else "", f"↑{found.ahead}" if found.ahead else "")
+    return " ".join(filter(None, parts))
 
 
 def _agent(agent: Pane, last: bool) -> str:
+    return sgr(DIM, f"│   {'└' if last else '├'} {describe(agent)}")
+
+
+def describe(agent: Pane) -> str:
     who = "teammate" if agent.role == ps.TEAMMATE else "claude"
-    return _sgr(DIM, f"│   {'└' if last else '├'} {who} · win {agent.window} · {WORD[agent.state]}")
+    return f"{who} · win {agent.window} · {WORD[agent.state]}"
 
 
 def _name(row: Row) -> str:
@@ -216,7 +237,7 @@ def _line(session: str, group: int, display: str) -> str:
     return f"{session}\t{group}\t{display}"
 
 
-def _sgr(code: str, text: str) -> str:
+def sgr(code: str, text: str) -> str:
     return f"\033[{code}m{text}\033[0m"
 
 
