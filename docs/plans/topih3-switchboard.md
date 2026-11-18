@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | in progress · next: A3 |
+| **Status** | in progress · next: A4 |
 | **Updated** | 2026-11-18 |
 | **Tracker** | — |
 | **Related** | [approved design](../superpowers/specs/2026-11-18-switchboard-design.md); wkt's `docs/plans/too7nn-tmux-mode.md` (S5, S19, S21); dotfiles `docs/superpowers/specs/2026-11-16-tmux-core-design.md` |
@@ -48,13 +48,23 @@
   - Its shape: `[[groups]]` with `name` and `icon`; `[[projects]]` with `name`, `group`, `icon` and `path`.
   - A project's icon wins over its group's. Labels read `<icon> <group>/<name>`.
   - A missing or invalid file means no labels, never an error in the picker.
-- **S7 Claude Code hook facts. A3 must check these against Claude Code's current docs before relying on them.**
+- **S7 Claude Code hook facts. A3 must check these against Claude Code's current docs before relying on them.** *(Superseded by S10, which A3 verified.)*
   - **Events used:** `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `PostToolUseFailure`, `PermissionRequest`, `Notification`, `Stop`, `SubagentStop` and `SessionEnd`, possibly with `SubagentStart`.
   - **Payload:** JSON on stdin. It has `hook_event_name` and `session_id`, `agent_id` for subagents, and `notification_type` (or the like) on `Notification`.
   - **Notification types** seen in Claude Code 2.1.326's binary: `permission_prompt`, `idle_prompt`, `elicitation_dialog`, `agent_needs_input` and `agent_completed`. The last two may be how teammates and subagents report, so A3 investigates them.
   - **No event fires on a user interrupt or on approving a permission.** See Design § A slow approved command.
 - **S8 Herdr's Claude hook** (`~/.claude/hooks/herdr-agent-state.sh`, from the user's private `tool-hooks` plugin) only reports `SessionStart` to Herdr, which works out the state another way. switchboard leaves it untouched, and the two run side by side.
 - **S9 The tests never touch a real tmux server, fzf, Claude, or the user's files.** They use stub executables first on `PATH` (as wkt's `test/test_helper.bash` does) and a temporary `HOME`. Real-tmux checks run only on a throwaway server with `-f /dev/null` (`tmux -L <name>`, or `TMUX_TMPDIR` under `$TMPDIR`, because the scratchpad path is too long for a socket). That server is killed afterwards.
+
+- **S10 Hook facts, verified in A3 (2026-11-18)** against the code.claude.com docs for hooks, sub-agents and agent teams, and the local Claude Code 2.1.327 binary:
+  - **All nine S7 events exist,** plus `SubagentStart` (unused) and `TeammateIdle`. A failed API call ends the turn with `StopFailure`, not `Stop`. `Stop` doesn't fire on an interrupt.
+  - **Payload:** subagents and in-process teammates carry `agent_id`/`agent_type`. `Notification` never carries `agent_id`; its type field is `notification_type`. `permission_prompt` repeats `PermissionRequest` about 6 s later, except for sandbox network requests. `elicitation_url_dialog` is another needs-input type. `agent_needs_input` and `agent_completed` belong to agent view's background sessions, are answered elsewhere, and are ignored.
+  - **Needs the user, like `AskUserQuestion`:** `ExitPlanMode`.
+  - **Subagents run in the background by default.** Their prompts appear in the lead's pane, even after the lead's `Stop`.
+  - **`UserPromptSubmit` also fires for turns Claude starts itself** (a subagent reporting back, a cron, a message from another session). An undocumented `source` field tells them apart.
+  - **`SessionEnd` also fires on `/clear` and `/resume`,** while Claude keeps running in the pane.
+  - **Teammates:** a split-pane teammate's hooks carry no `agent_id`, and its environment matches the lead's. The team config at `$CLAUDE_CONFIG_DIR/teams/*/config.json` (default `~/.claude/teams/`) lists each teammate's pane as `members[].tmuxPaneId`, with `"leader"` for the lead; that field name is undocumented. `TeammateIdle` fires after a teammate's `Stop`. Teammates in the lead's own pane, the default unless `teammateMode` is `auto` or `tmux`, behave like subagents.
+  - **Accepted risks:** detection uses the undocumented `tmuxPaneId` and `source` fields. If they go away, a teammate gets one spurious "done" on its first turn. Two events at the same moment can overwrite each other within a few ms; a lock was rejected because it risked blocking.
 
 ## Data model
 
@@ -68,17 +78,23 @@
 - **The displayed state is derived:** needs you if any prompt is pending; otherwise the turn state.
 - **Teammates never become `done`.** When a lead would become done, a teammate becomes idle (Design § Agent-team teammates).
 
-### Event mapping (Design § My calls 3, extended by § My calls 2)
+### Event mapping (as built in A3; S10)
+
+Agent keys are `lead` or the payload's `agent_id`.
 
 | Event | Effect |
 |---|---|
-| `UserPromptSubmit` | lead's turn → working; clear all pending |
-| `PermissionRequest`, `Notification` of a needs-input type, `PreToolUse` for `AskUserQuestion` | add the event's agent key to pending |
-| `PostToolUse`, `PostToolUseFailure` | remove that agent key from pending; a lead whose turn was idle or done goes back to working |
-| `SubagentStop` | remove that subagent's key |
-| `Stop` (lead) | clear pending; turn → done, or idle when a client is viewing the session or the pane is a teammate |
-| `Notification` `idle_prompt` | a working turn → idle |
-| `SessionEnd` | remove all `@switchboard-` options from the pane |
+| `UserPromptSubmit` | turn → working. A typed prompt (`source` "user" or absent) clears all pending; any other source removes only the lead's key |
+| `PermissionRequest`; `PreToolUse` for `AskUserQuestion` or `ExitPlanMode` | add the event's key |
+| `Notification`: `permission_prompt`, `elicitation_dialog`, `elicitation_url_dialog` | add the lead's key, only when nothing is pending |
+| `PostToolUse`, `PostToolUseFailure` | remove the event's key; the lead's own tool event sets the turn to working |
+| `SubagentStop`; `TeammateIdle` or `StopFailure` carrying an `agent_id` | remove that agent's key |
+| `Stop`, `StopFailure`, `TeammateIdle` (no `agent_id`) | remove only the lead's key; turn → done, or idle if a client views the session or the pane is a teammate. `TeammateIdle` also marks the pane a teammate |
+| `Notification` `idle_prompt` | working → idle |
+| `SessionEnd` with reason clear or resume | turn idle, pending cleared, role kept |
+| `SessionEnd`, any other reason | unset all four options |
+
+**The lead's `Stop` no longer clears subagents' prompts** (a change from the original table): a background subagent's prompt is still on screen after the lead stops.
 
 ### Session rows (switcher)
 - Each tmux session resolves (S5) to `(repo common dir, worktree root, branch)`, or to "other".
@@ -280,3 +296,4 @@ Ask of every PR:
 - 2026-11-18: plan written from the approved design. The repo was created and hardened (S3).
 - 2026-11-18: phase A1 landed as #2. gh-harden now requires `secrets` and the four `test (…)` matrix jobs.
 - 2026-11-18: phase A2 landed as #3. The pane options are `@switchboard-role`, `-turn`, `-pending` and `-at` (in `panestate.py`). A pane without its own value inherits a window-level option in formats, so A3 must always use `set-option -p`.
+- 2026-11-18: phase A3 landed as #4. Plan amended with S10 and the as-built event mapping: `StopFailure`, `ExitPlanMode`, `TeammateIdle` and team-config detection; subagent prompts survive the lead's `Stop`; `/clear` and `/resume` keep the role. The hook takes about 23 ms per `PostToolUse` on a real tmux, so the shell fast path isn't needed.
