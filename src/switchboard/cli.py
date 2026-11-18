@@ -10,7 +10,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     # The hook runs on every Claude tool call: skip argparse.
     if argv[:1] == ["hook"]:
-        return hook()
+        return cmd_hook(argv[1:])
     return _main(argv)
 
 
@@ -29,7 +29,7 @@ def _main(argv: list[str]) -> int:
 
     p = sub.add_parser("hook", help="Claude Code hook entry point, reading the hook JSON on stdin")
     p.add_argument("event", nargs="?", help="the hook event, such as Stop")
-    p.set_defaults(func=lambda args: hook())
+    p.set_defaults(func=lambda args: cmd_hook([args.event] if args.event else []))
 
     p = sub.add_parser("seen", help="mark the current session's finished agents seen")
     p.set_defaults(func=cmd_seen)
@@ -47,13 +47,20 @@ def _err(message: str) -> None:
     print(f"switchboard: {message}", file=sys.stderr)
 
 
-def hook() -> int:
+def cmd_hook(args: list[str]) -> int:
+    """Silent and always 0: a failing hook must never get in Claude's way."""
+    import os
+
+    pane = os.environ.get("TMUX_PANE")
+    if not pane or sys.stdin is None:
+        return 0
     import contextlib
 
     with contextlib.suppress(Exception):
-        # Never block on a terminal.
-        if sys.stdin is not None and not sys.stdin.isatty():
-            sys.stdin.buffer.read()
+        if not sys.stdin.isatty():
+            from switchboard import hook
+
+            hook.handle(args, pane, sys.stdin.buffer.read())
     return 0
 
 
