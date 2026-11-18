@@ -1,4 +1,5 @@
-"""`switchboard hook <event>` against the stub tmux: the event mapping, teammates, and failures.
+"""Claude Code's adapter through `switchboard hook <event>` against the stub tmux: the event
+mapping, teammates, and failures.
 
 A pane's state is written `role:turn:pending` here, as in `lead:working:a1,lead`.
 """
@@ -14,6 +15,7 @@ import time
 import pytest
 
 from switchboard import alert, hook, panestate
+from switchboard.agents import claude
 
 PANE = "%7"
 READ = [
@@ -304,7 +306,7 @@ def test_a_broken_team_config_is_skipped(tmp_path, content):
     config = tmp_path / "home" / ".claude" / "teams" / "broken" / "config.json"
     config.parent.mkdir(parents=True)
     config.write_text(content)
-    assert not hook.listed_as_teammate(PANE)
+    assert not claude.listed_as_teammate(PANE)
 
 
 def script(event: str, payload: str):
