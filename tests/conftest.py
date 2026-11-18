@@ -14,7 +14,7 @@ import pytest
 SCRUBBED = ("TMUX", "CLAUDECODE")
 SCRUBBED_PREFIXES = ("TMUX_", "SWITCHBOARD_", "CLAUDE_")
 
-# A stand-in for `tmux`. It logs every call and answers from a JSON spec keyed by
+# A stand-in for `tmux`, and for `afplay`. It logs every call and answers from a JSON spec keyed by
 # subcommand, "*" matching any other: {"list-sessions": {"code": 0, "stdout": "...",
 # "stderr": ""}}. A command without an answer succeeds with no output.
 STUB_TMUX = """#!{python}
@@ -103,11 +103,13 @@ class StubFzf(Stub):
 class Stubs:
     tmux: StubTmux
     fzf: StubFzf
+    afplay: StubTmux
 
 
 @pytest.fixture(autouse=True)
 def isolated(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Stubs:
-    """Every test gets its own HOME and XDG dirs, and stub `tmux` and `fzf` first on PATH."""
+    """Every test gets its own HOME and XDG dirs, and stub `tmux`, `fzf` and `afplay` first on
+    PATH."""
     for var in list(os.environ):
         if var in SCRUBBED or var.startswith(SCRUBBED_PREFIXES):
             monkeypatch.delenv(var)
@@ -124,15 +126,20 @@ def isolated(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Stubs:
     stubs = Stubs(
         tmux=StubTmux(tmp_path / "tmux-spec.json", tmp_path / "tmux-log.jsonl"),
         fzf=StubFzf(tmp_path / "fzf-spec.json", tmp_path / "fzf-log.jsonl"),
+        afplay=StubTmux(tmp_path / "afplay-spec.json", tmp_path / "afplay-log.jsonl"),
     )
-    for name, source, stub in (("tmux", STUB_TMUX, stubs.tmux), ("fzf", STUB_FZF, stubs.fzf)):
+    for name, source, stub in (
+        ("tmux", STUB_TMUX, stubs.tmux),
+        ("fzf", STUB_FZF, stubs.fzf),
+        ("afplay", STUB_TMUX, stubs.afplay),
+    ):
         path = bin_dir / name
         path.write_text(
             source.format(python=sys.executable, log=str(stub.log_path), spec=str(stub.spec_path))
         )
         path.chmod(path.stat().st_mode | stat.S_IEXEC)
     monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ['PATH']}")
-    for name in ("tmux", "fzf"):
+    for name in ("tmux", "fzf", "afplay"):
         if shutil.which(name) != str(bin_dir / name):
             pytest.fail(f"refusing to run: {name} doesn't resolve to the stub", pytrace=False)
     return stubs

@@ -7,7 +7,9 @@ import sys
 from switchboard import run, tmux
 from switchboard.tmux import Pane, Session
 
-SESSIONS_FORMAT = "#{session_name}\t#{@wkt-worktree}\t#{session_path}\t#{session_last_attached}"
+SESSIONS_FORMAT = (
+    "#{session_name}\t#{@wkt-worktree}\t#{session_path}\t#{session_last_attached}\t#{@attention}"
+)
 PANES_FORMAT = (
     "#{session_name}\t#{window_index}\t#{pane_id}\t#{pane_current_command}"
     "\t#{@switchboard-role}\t#{@switchboard-turn}\t#{@switchboard-pending}\t#{@switchboard-at}"
@@ -17,11 +19,13 @@ PANES_FORMAT = (
 def test_sessions_is_one_list_sessions_query(stubs):
     stubs.tmux.answer(
         "list-sessions",
-        stdout="widget/main\t/w/main\t/w/main\t1763500000\nscratch\t\t/tmp\t\nbad line\n",
+        stdout="widget/main\t/w/main\t/w/main\t1763500000\t\n"
+        "scratch\t\t/tmp\t\t#[fg=themegreen]✓ widget/main#[default]\n"
+        "bad line\n",
     )
     assert tmux.sessions() == [
         Session("widget/main", "/w/main", "/w/main", 1763500000),
-        Session("scratch", "", "/tmp", 0),
+        Session("scratch", "", "/tmp", 0, "#[fg=themegreen]✓ widget/main#[default]"),
     ]
     assert stubs.tmux.calls() == [["list-sessions", "-F", SESSIONS_FORMAT]]
 

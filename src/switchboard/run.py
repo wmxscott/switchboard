@@ -1,10 +1,19 @@
-"""Running a command that only reads, with a timeout."""
+"""Running a command with a timeout, and tmux commands chained into one invocation."""
 
 from __future__ import annotations
 
 import subprocess
+from collections.abc import Sequence
 
 TIMEOUT = 2
+
+
+def tmux(*commands: Sequence[str]) -> str | None:
+    """Runs `commands` in one tmux invocation, chained with `;`."""
+    args: list[str] = []
+    for command in commands:
+        args += [";", *command] if args else command
+    return output("tmux", *args) if args else None
 
 
 def output(*argv: str) -> str | None:

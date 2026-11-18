@@ -14,7 +14,7 @@ from switchboard.tmux import Pane, Session
 
 
 def sessions_text(*rows: tuple[str, str, str | Path]) -> str:
-    return "".join(f"{name}\t{tag}\t{path}\t0\n" for name, tag, path in rows)
+    return "".join(f"{name}\t{tag}\t{path}\t0\t\n" for name, tag, path in rows)
 
 
 def panes_text(*rows: tuple[str, str, str, str]) -> str:

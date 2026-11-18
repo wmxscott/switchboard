@@ -31,7 +31,8 @@ def _main(argv: list[str]) -> int:
     p.add_argument("event", nargs="?", help="the hook event, such as Stop")
     p.set_defaults(func=lambda args: cmd_hook([args.event] if args.event else []))
 
-    p = sub.add_parser("seen", help="mark the current session's finished agents seen")
+    p = sub.add_parser("seen", help="mark a session's finished agents seen")
+    p.add_argument("session", nargs="?", help="the session, by default the current one")
     p.set_defaults(func=cmd_seen)
 
     p = sub.add_parser("refresh", help="rebuild the status bar's attention list")
@@ -70,8 +71,16 @@ def cmd_pick(args) -> int:
 
 
 def cmd_seen(args) -> int:
+    from switchboard import attention
+
+    session = args.session or attention.current_session()
+    if session:
+        attention.seen(session)
     return 0
 
 
 def cmd_refresh(args) -> int:
+    from switchboard import attention
+
+    attention.refresh()
     return 0
