@@ -67,10 +67,10 @@ def test_outside_tmux_commands_exit_quietly(command):
     assert (result.returncode, result.stdout, result.stderr) == (0, "", "")
 
 
-def test_the_picker_is_not_built_yet(stubs):
+def test_the_picker_outside_tmux_exits_1(stubs):
     result = run()
     assert result.returncode == 1
     assert result.stdout == ""
-    assert result.stderr == "switchboard: the picker isn't built yet\n"
+    assert result.stderr == "switchboard: the picker only runs inside tmux\n"
     assert stubs.tmux.calls() == []
     assert stubs.fzf.calls() == []
