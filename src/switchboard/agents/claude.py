@@ -33,29 +33,30 @@ def early(event: str, payload: dict) -> list[core.Verb] | None:
     return None
 
 
-def verbs(event: str, payload: dict, state: core.State) -> list[core.Verb]:
+def verbs(event: str, payload: dict, state: core.State, teams: bool = True) -> list[core.Verb]:
+    """`teams=False` leaves out agent teams, for an agent that reuses this mapping."""
     fresh = event == "SessionStart" and payload.get("source") in NEW_CLAUDE
-    key = _key(payload)
+    agent = key(payload)
     found = [core.START] if fresh else []
-    if _teammate(event, key, "" if fresh else state.role, state.pane):
+    if teams and _teammate(event, agent, "" if fresh else state.role, state.pane):
         found.append(core.TEAMMATE)
     if event == "UserPromptSubmit":
         # Only a typed prompt shows that no other agent's dialog is still open.
         typed = payload.get("source", "user") == "user"
         found += [core.WORKING, core.RESOLVE_ALL if typed else core.resolve(ps.LEAD_KEY)]
     elif event in ("PermissionRequest", "PreToolUse"):
-        found.append(core.needs(key))
+        found.append(core.needs(agent))
     elif event == "Notification":
         if payload.get("notification_type") == "idle_prompt":
             found += [core.IDLE] if state.turn == ps.WORKING else []
         elif not state.pending:
             # Names no agent, and repeats a PermissionRequest seconds later.
-            found.append(core.needs(key))
+            found.append(core.needs(agent))
     elif event in TOOL_DONE:
-        found.append(core.resolve(key))
-        found += [core.WORKING] if key == ps.LEAD_KEY else []
-    elif event == "SubagentStop" or (event in TURN_END and key != ps.LEAD_KEY):
-        found.append(core.resolve(key))
+        found.append(core.resolve(agent))
+        found += [core.WORKING] if agent == ps.LEAD_KEY else []
+    elif event == "SubagentStop" or (event in TURN_END and agent != ps.LEAD_KEY):
+        found.append(core.resolve(agent))
     elif event in TURN_END:
         found += [core.resolve(ps.LEAD_KEY), core.DONE]
     elif event == "SessionEnd":
@@ -94,7 +95,8 @@ def _teammate(event: str, key: str, stored: str, pane: str) -> bool:
     return stored not in ps.ROLES and listed_as_teammate(pane)
 
 
-def _key(payload: dict) -> str:
+def key(payload: dict) -> str:
+    """The pending-prompt key of the event's agent: a subagent's id, else `lead`."""
     agent = payload.get("agent_id")
     return (isinstance(agent, str) and ps.encode_pending([agent])) or ps.LEAD_KEY
 
