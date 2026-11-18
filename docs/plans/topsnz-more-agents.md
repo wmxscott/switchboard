@@ -107,6 +107,14 @@ switchboard tracks Codex and Pi agents alongside Claude Code. Each agent's event
   - `SessionEnd` always ends.
   - It reuses `agents/claude.py` rather than copying it.
 
+- **S12 The sidebar (user's decisions, 2026-11-18).**
+  - **The toggle:** `prefix b` (a bare `Ctrl-W` would steal the shell's and Neovim's keys) opens a ~32-column pane on the left of the current window, or closes it if it's there. The pane is tagged with a pane option, for example `@switchboard-sidebar`, and opens without taking focus (`split-window -hbd`).
+  - **It stays in that window.** It doesn't follow you into other sessions. *(Rejected: one that follows you, which would add panes to windows you didn't touch and squeeze their layouts.)*
+  - **What it shows:** the picker's list in compact form: repo headers, and worktree rows with their state dot. Agents fold into the dot, your session is highlighted, and there's no preview. It uses the same keys and look as the picker, and Enter switches session while the sidebar stays.
+  - **Live updates:** it redraws when state changes. `refresh` pokes each sidebar's fzf `--listen` socket with a reload. No polling.
+  - **Restore:** tmux-resurrect restores it as a sidebar, via `@resurrect-processes`, not as a stray shell.
+  - **Version:** it ships in 1.2.0, after 1.1.0 (Codex and Pi), and builds on the picker-look branch.
+
 ## Stacks and phases
 
 ### Stack S: switchboard core and adapters
@@ -197,6 +205,23 @@ It merges after 1.1.0 is in the tap.
 
 - [ ] P1: Pi extension
 
+### Stack D: sidebar (1.2.0)
+
+- **Base:** `main`
+- **Owns:** `src/switchboard/sidebar.py`, `tests/test_sidebar.py`
+- **Independent of:** X, P
+- **Depends on:** S (1.1.0 released), and the picker-look branch merged
+
+| Phase | Lands | Depends on |
+|---|---|---|
+| D1 | `switchboard sidebar`: the compact list, live reload through fzf `--listen`, Enter switches and the sidebar stays | S3 |
+| D2 | `switchboard sidebar --toggle`, the pane tag, the README, release 1.2.0 | D1 |
+| D3 | dotfiles: `bind b` and `@resurrect-processes` for the sidebar | D2 |
+
+- [ ] D1: sidebar list
+- [ ] D2: toggle and 1.2.0
+- [ ] D3: dotfiles binding
+
 ## Forest from the trees
 
 ### Challenge
@@ -223,3 +248,4 @@ The advisor isn't available, so here's my own case against the plan.
 ## Log
 
 - 2026-11-18: plan written from the Codex and Pi research and the user's decisions: superscripts, no Codex wrapper, adapters in `agents/`.
+- 2026-11-18: C1 landed as #12, S1a as #13 and S1b as #14. X1 is ai-toolkit#35 and P1 is ai-toolkit#36, both open and waiting for 1.1.0. Plan amended with S12 and Stack D, the sidebar the user asked for (stays in its window, `prefix b`).
