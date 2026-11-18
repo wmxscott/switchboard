@@ -6,7 +6,7 @@ A keyboard-only tmux session switcher for people who run coding agents in tmux: 
 
 There are four pieces:
 
-- **The picker.** One key opens it in a popup. It lists every session as repo → worktree → agents, with each agent's state, and previews the highlighted session. `j`/`k` and Enter switch. No mouse.
+- **The picker.** One key opens it in a popup. It lists every session as repo → worktree → agents, with each agent's state, and previews the highlighted session. `j`/`k` and Enter switch, and `q` closes. No mouse.
 - **The status-bar segment.** It names the other sessions whose agents need you or are done.
 - **The alert.** A tmux message on every client and a short sound, when an agent in a session no one is looking at needs you or finishes.
 - **The hook.** Each agent runs `switchboard hook [--agent NAME] <event>` on its events, and that keeps its state up to date. Claude Code and Codex run it from their hooks, and Pi from an extension. Other agents can be [added](#adding-an-agent).
@@ -16,44 +16,53 @@ State lives in tmux pane options on each agent's pane. There's no daemon, no pol
 ## The picker
 
 ```
-  j/k move · / search · tab fold · enter switch · esc close
+j/k move · / search · tab fold · ↵ switch · q/esc close
+
 ▸ gadget  1 done
 ▾ widget  1 needs you · 1 working
-│ ▸ main       ~2     ●
-│   └ claude · win 1 · working
-│   fix-login  ~1 ↑3  ▲
-│   ├ claude · win 0 · needs you
-│   └ teammate · win 2 · idle
+│ ◉ main       ~2     ●
+│   └ ● claude · win 1 · working
+│   fix-login  ~1 ↑3  ●
+│   ├ ● claude · win 0 · needs you
+│   └ ○ teammate · win 2 · idle
 ▾ other
 │   notes
 ```
 
-- **Repo headers** show the repo's name, or its [label](#project-labels), and how many of its sessions need you, are done or are working. `▾` is open and `▸` is folded.
-- **Worktree rows** show the branch (in "other", the session's name), its git status and the most urgent agent's state. `~2` is two uncommitted changes, and `↑3` is three commits not pushed. `▸` marks the session you're in, and the cursor starts there.
-- **Agent rows** are dimmed, under their worktree: `claude` for a Claude Code session, or `teammate` for an agent-team teammate in its own pane, with the window it's in.
+The picker draws its icons from a [Nerd Font](https://www.nerdfonts.com): the sketch above stands in plain characters for them, and leaves out the dots' [colours](#states).
+
+- **Repo headers** show the repo's name, or its [label](#project-labels), and how many of its sessions need you, are done or are working. A caret pointing down is open, and one pointing right is folded.
+- **Worktree rows** show the branch (in "other", the session's name), its git status and the most urgent agent's state. `~2` is two uncommitted changes, and `↑3` is three commits not pushed. A green circled dot marks the session you're in, and the cursor starts there.
+- **Agent rows** sit under their worktree, in a softer colour, each starting with its state's dot. Each names the agent by its label, `claude`, `codex` or `pi`, or `teammate` for an agent-team teammate in its own pane, then the window it's in.
 - **Order:** repos alphabetically, then "other" for sessions outside any repo. Within a repo, the default branch comes first, then the rest alphabetically.
 - **The preview** on the right shows the session's folder, its windows with an agent's icon on the window that holds it, and the last lines of its most urgent agent's pane, or of its active pane when it has no agents. So you can see what an agent is asking before you switch.
 
 Git status is read for every worktree at once, with a one-second limit. A slow or broken repo shows no status rather than holding up the list.
+
+The picker's colours are Catppuccin Latte in light mode and Macchiato in dark mode, as in [wkt](https://github.com/wmxscott/wkt)'s picker. It chooses once when it starts: [`SWITCHBOARD_THEME`](#configuration) if it's `light` or `dark`, else theme-monitor's trigger file, else macOS's own setting. fzf's own colours, such as the highlighted line's, come from your fzf settings, as wkt's do.
 
 ### Keys
 
 | Key | Does |
 |---|---|
 | `j` / `k` | Move |
-| `/` | Search. After that, `j` and `k` type letters, and the arrow keys move |
+| `/` | Search. After that, `j`, `k` and `q` type letters, and the arrow keys move |
 | Tab | Fold or unfold the highlighted row's repo |
 | Enter | Switch to the highlighted session. On an agent row, its session. On a repo header, nothing |
-| Esc | Close |
+| `q` / Esc | Close. While searching, Esc clears the search and goes back to `j` and `k` |
+
+The header shows the keys that work at the moment, and changes when you search.
 
 ## States
 
-| | State | Means |
-|---|---|---|
-| ▲ | needs you | A permission prompt or a question is waiting for you: a tool approval, `AskUserQuestion`, a plan to approve, or an MCP server asking for input |
-| ✓ | done | It finished a turn while you were in another session |
-| ● | working | It's busy on a turn |
-| ○ | idle | It's waiting for a prompt, and you've seen it |
+| Picker | Status bar | State | Means |
+|---|---|---|---|
+| red dot | ▲ | needs you | A permission prompt or a question is waiting for you: a tool approval, `AskUserQuestion`, a plan to approve, or an MCP server asking for input |
+| green dot | ✓ | done | It finished a turn while you were in another session |
+| orange dot | | working | It's busy on a turn |
+| hollow green dot | | idle | It's waiting for a prompt, and you've seen it |
+
+In the picker, green means finished and a filled dot means you haven't seen it yet.
 
 - **Starting Claude Code** shows it idle at once, before its first prompt. So does `claude --continue` in a restored pane.
 - **Sending a prompt** makes an agent working.
@@ -75,6 +84,7 @@ Interrupting a turn sends no event either, so the agent shows working until Clau
 
 - **tmux 3.8 or later.** The status-bar segment uses tmux 3.8's theme colours.
 - **[fzf](https://github.com/junegunn/fzf) 0.59 or later**, for the picker.
+- **A [Nerd Font](https://www.nerdfonts.com)** in your terminal, for the picker's icons.
 - **Python 3.11 or later**, when installing from source.
 - **A coding agent**, for agent state. Without one, switchboard is a plain session switcher:
   - **Claude Code**
@@ -276,6 +286,7 @@ That labels the repo at `~/src/widget` as `🔧 tools/widget`. A project's own `
 
 | Variable | |
 |---|---|
+| `SWITCHBOARD_THEME` | The picker's colours: `light`, `dark` or `auto`. `auto`, the default, follows [theme-monitor](https://github.com/wmxscott/theme-monitor)'s trigger file, `$XDG_DATA_HOME/theme-monitor/theme-change.trigger`, else macOS's setting, else light |
 | `SWITCHBOARD_SOUND` | The alert's sound file. Empty turns the sound off. By default, macOS's Glass sound. The hook plays it, so set it where Claude Code will see it, such as your shell profile |
 | `XDG_CONFIG_HOME` | Where the [project list](#project-labels) is looked for, instead of `~/.config` |
 | `CLAUDE_CONFIG_DIR` | Where Claude Code keeps its team configs, which tell a teammate's pane from its lead's. By default, `~/.claude` |
