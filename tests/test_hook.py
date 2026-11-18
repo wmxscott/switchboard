@@ -363,6 +363,30 @@ def test_a_teammates_needs_you_alerts(stubs, played):
     assert alerts(stubs)[0] == ("/dev/ttys001", "▲ work needs you")
 
 
+def test_a_leads_stop_with_a_prompt_pending_does_not_alert(stubs, played):
+    stored(stubs, "lead:working:a1")
+    fire("Stop")
+    assert after(stubs) == "lead:done:a1"
+    assert alerts(stubs) == []
+    assert played == []
+    assert stubs.tmux.calls()[-1][0] == "list-sessions"
+
+
+@pytest.mark.parametrize(
+    ("viewed", "expected"),
+    [
+        (False, [(c, "✓ work is done") for c in ("/dev/ttys001", "/dev/ttys002")]),
+        (True, []),
+    ],
+)
+def test_answering_that_prompt_alerts_done_unless_viewed(stubs, played, viewed, expected):
+    stored(stubs, "lead:done:a1", viewed=viewed)
+    fire("PostToolUse", agent_id="a1")
+    assert after(stubs) == "lead:done:"
+    assert alerts(stubs) == expected
+    assert played == ([True] if expected else [])
+
+
 def test_another_prompt_while_one_is_pending_does_not_alert_again(stubs, played):
     stored(stubs, "lead:working:a1")
     fire("PermissionRequest")

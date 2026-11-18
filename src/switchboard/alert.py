@@ -23,16 +23,14 @@ State = tuple[str, str, str]
 
 
 def news(before: State, after: State) -> str | None:
-    """What a change between two (role, turn, pending) states alerts about, if anything.
+    """The displayed state a change between two (role, turn, pending) states alerts about.
 
     Needs-you for any agent; done only for a lead, since teammates go idle between messages.
     """
-    role, turn, _ = after
-    if _shown(after) == ps.NEEDS and _shown(before) != ps.NEEDS:
-        return ps.NEEDS
-    if role == ps.LEAD and turn == ps.DONE and before[1] != ps.DONE:
-        return ps.DONE
-    return None
+    shown = _shown(after)
+    if shown == _shown(before) or (shown == ps.DONE and after[0] != ps.LEAD):
+        return None
+    return shown if shown in (ps.NEEDS, ps.DONE) else None
 
 
 def send(state: str, session: str, clients: Iterable[str]) -> None:
