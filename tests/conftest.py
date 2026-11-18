@@ -4,6 +4,7 @@ import json
 import os
 import shutil
 import stat
+import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -140,3 +141,53 @@ def isolated(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Stubs:
 @pytest.fixture
 def stubs(isolated: Stubs) -> Stubs:
     return isolated
+
+
+def git(*args: str | Path) -> str:
+    result = subprocess.run(["git", *map(str, args)], capture_output=True, text=True, check=True)
+    return result.stdout.strip()
+
+
+def real(path: str | Path) -> str:
+    return os.path.realpath(path)
+
+
+@dataclass
+class Repos:
+    """Real git repositories under a temporary folder."""
+
+    root: Path
+
+    def origin(self, name: str, default: str = "main", branches: tuple[str, ...] = ()) -> Path:
+        path = self.root / "origins" / name
+        git("init", "-q", "-b", default, path)
+        git("-C", path, "commit", "-q", "--allow-empty", "-m", "init")
+        for branch in branches:
+            git("-C", path, "branch", branch)
+        return path
+
+    def clone(self, origin: Path, name: str) -> Path:
+        git("clone", "-q", origin, self.root / name)
+        return self.root / name
+
+    def layout(self, origin: Path, name: str, *worktrees: str) -> Path:
+        """A `.bare` layout, as `wkt setup` makes, with a worktree for each branch."""
+        root = self.root / name
+        git("clone", "-q", "--bare", origin, root / ".bare")
+        (root / ".git").write_text("gitdir: ./.bare\n")
+        for branch in worktrees:
+            git("-C", root, "worktree", "add", "-q", branch, branch)
+        return root
+
+
+@pytest.fixture
+def repos(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Repos:
+    for var in list(os.environ):
+        if var.startswith("GIT_"):
+            monkeypatch.delenv(var)
+    monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
+    for role in ("AUTHOR", "COMMITTER"):
+        monkeypatch.setenv(f"GIT_{role}_NAME", "Test")
+        monkeypatch.setenv(f"GIT_{role}_EMAIL", "test@example.com")
+    (tmp_path / "repos").mkdir()
+    return Repos(tmp_path / "repos")
