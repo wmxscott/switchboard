@@ -111,9 +111,14 @@ MAPPING = [
     ("SessionEnd", {"reason": "clear"}, "lead:done:a1,lead", "lead:idle:"),
     ("SessionEnd", {"reason": "resume"}, "teammate:working:lead", "teammate:idle:"),
     ("SessionStart", {"source": "startup"}, "::", "lead:idle:"),
+    ("SessionStart", {"source": "startup"}, "lead:working:a1", "lead:idle:"),
+    ("SessionStart", {"source": "resume"}, "lead:working:a1", "lead:idle:"),
+    ("SessionStart", {"source": "resume"}, "lead:done:", "lead:idle:"),
+    ("SessionStart", {"source": "startup"}, "teammate:working:", "lead:idle:"),
     ("SessionStart", {"source": "compact"}, "lead:working:a1,lead", None),
+    ("SessionStart", {"source": "fork"}, "lead:working:a1,lead", None),
     ("SessionStart", {"source": "clear"}, "lead:idle:", None),
-    ("SessionStart", {"source": "resume"}, "lead:done:", None),
+    ("SessionStart", {"source": "clear"}, "teammate:done:", None),
 ]
 
 
@@ -165,9 +170,17 @@ def test_a_session_start_registers_a_fresh_pane_as_an_idle_lead(stubs, source):
     assert after(stubs) == "lead:idle:"
 
 
-def test_a_compact_start_leaves_a_working_agent_and_its_prompts_alone(stubs):
+@pytest.mark.parametrize("source", ["startup", "resume"])
+def test_a_new_claude_resets_a_stale_pane(stubs, source):
+    stored(stubs, "lead:working:a1")
+    fire("SessionStart", hook_event_name="SessionStart", source=source)
+    assert after(stubs) == "lead:idle:"
+
+
+@pytest.mark.parametrize("source", ["compact", "fork"])
+def test_a_mid_session_start_leaves_a_working_agent_and_its_prompts_alone(stubs, source):
     stored(stubs, "lead:working:a1,lead")
-    fire("SessionStart", hook_event_name="SessionStart", source="compact")
+    fire("SessionStart", hook_event_name="SessionStart", source=source)
     assert stubs.tmux.calls() == [READ]
 
 
@@ -238,9 +251,10 @@ def test_a_pane_in_a_team_config_is_a_teammate_from_its_first_event(stubs, team)
     assert after(stubs) == "teammate:working:"
 
 
-def test_a_pane_in_a_team_config_starts_as_an_idle_teammate(stubs, team):
+@pytest.mark.parametrize("before", ["::", "teammate:working:a1", "lead:working:a1"])
+def test_a_pane_in_a_team_config_starts_as_an_idle_teammate(stubs, team, before):
     team()
-    stored(stubs, "::")
+    stored(stubs, before)
     fire("SessionStart", source="startup")
     assert after(stubs) == "teammate:idle:"
 
@@ -432,9 +446,20 @@ def test_answering_that_prompt_alerts_done_unless_viewed(stubs, played, viewed, 
     assert played == ([True] if expected else [])
 
 
-def test_registering_at_session_start_only_refreshes(stubs, played):
-    stored(stubs, "::")
-    fire("SessionStart", source="startup")
+@pytest.mark.parametrize(
+    ("source", "before"),
+    [
+        ("startup", "::"),
+        ("startup", "lead:working:a1"),
+        ("resume", "lead:done:lead"),
+        ("compact", "::"),
+        ("clear", "::"),
+        ("fork", "::"),
+    ],
+)
+def test_a_session_start_never_alerts(stubs, played, source, before):
+    stored(stubs, before)
+    fire("SessionStart", source=source)
     assert after(stubs) == "lead:idle:"
     assert alerts(stubs) == []
     assert played == []
