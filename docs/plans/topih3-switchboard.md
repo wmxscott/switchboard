@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | in progress · next: A1 |
+| **Status** | in progress · next: A2 |
 | **Updated** | 2026-11-18 |
 | **Tracker** | — |
 | **Related** | [approved design](../superpowers/specs/2026-11-18-switchboard-design.md); wkt's `docs/plans/too7nn-tmux-mode.md` (S5, S19, S21); dotfiles `docs/superpowers/specs/2026-11-16-tmux-core-design.md` |
@@ -278,3 +278,4 @@ Ask of every PR:
 ## Log
 
 - 2026-11-18: plan written from the approved design. The repo was created and hardened (S3).
+- 2026-11-18: phase A1 landed as #2. gh-harden now requires `secrets` and the four `test (…)` matrix jobs.
