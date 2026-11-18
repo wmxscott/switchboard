@@ -110,6 +110,15 @@ MAPPING = [
     ("TeammateIdle", A1, "lead:working:a1", "lead:working:"),
     ("SessionEnd", {"reason": "clear"}, "lead:done:a1,lead", "lead:idle:"),
     ("SessionEnd", {"reason": "resume"}, "teammate:working:lead", "teammate:idle:"),
+    ("SessionStart", {"source": "startup"}, "::", "lead:idle:"),
+    ("SessionStart", {"source": "startup"}, "lead:working:a1", "lead:idle:"),
+    ("SessionStart", {"source": "resume"}, "lead:working:a1", "lead:idle:"),
+    ("SessionStart", {"source": "resume"}, "lead:done:", "lead:idle:"),
+    ("SessionStart", {"source": "startup"}, "teammate:working:", "lead:idle:"),
+    ("SessionStart", {"source": "compact"}, "lead:working:a1,lead", None),
+    ("SessionStart", {"source": "fork"}, "lead:working:a1,lead", None),
+    ("SessionStart", {"source": "clear"}, "lead:idle:", None),
+    ("SessionStart", {"source": "clear"}, "teammate:done:", None),
 ]
 
 
@@ -152,6 +161,27 @@ def test_parallel_subagents_do_not_clear_each_other(stubs):
         stored(stubs, before)
         fire(event, agent_id=agent)
         assert after(stubs) == expected, (event, agent)
+
+
+@pytest.mark.parametrize("source", ["startup", "resume", "clear", "compact", "fork"])
+def test_a_session_start_registers_a_fresh_pane_as_an_idle_lead(stubs, source):
+    stored(stubs, "::")
+    fire("SessionStart", hook_event_name="SessionStart", source=source)
+    assert after(stubs) == "lead:idle:"
+
+
+@pytest.mark.parametrize("source", ["startup", "resume"])
+def test_a_new_claude_resets_a_stale_pane(stubs, source):
+    stored(stubs, "lead:working:a1")
+    fire("SessionStart", hook_event_name="SessionStart", source=source)
+    assert after(stubs) == "lead:idle:"
+
+
+@pytest.mark.parametrize("source", ["compact", "fork"])
+def test_a_mid_session_start_leaves_a_working_agent_and_its_prompts_alone(stubs, source):
+    stored(stubs, "lead:working:a1,lead")
+    fire("SessionStart", hook_event_name="SessionStart", source=source)
+    assert stubs.tmux.calls() == [READ]
 
 
 def test_session_end_unsets_every_option_without_reading_then_refreshes(stubs):
@@ -221,6 +251,14 @@ def test_a_pane_in_a_team_config_is_a_teammate_from_its_first_event(stubs, team)
     assert after(stubs) == "teammate:working:"
 
 
+@pytest.mark.parametrize("before", ["::", "teammate:working:a1", "lead:working:a1"])
+def test_a_pane_in_a_team_config_starts_as_an_idle_teammate(stubs, team, before):
+    team()
+    stored(stubs, before)
+    fire("SessionStart", source="startup")
+    assert after(stubs) == "teammate:idle:"
+
+
 def test_a_teammates_stop_goes_idle_not_done(stubs, team):
     team()
     stored(stubs, ":working:")
@@ -280,10 +318,11 @@ def script(event: str, payload: str):
     )
 
 
+@pytest.mark.parametrize("event", ["Stop", "SessionStart"])
 @pytest.mark.parametrize("payload", ["", "not json {", "{", "[1, 2]", '"Stop"'])
-def test_a_malformed_payload_exits_0_silently(stubs, payload):
+def test_a_malformed_payload_exits_0_silently(stubs, event, payload):
     stored(stubs)
-    result = script("Stop", payload)
+    result = script(event, payload)
     assert (result.returncode, result.stdout, result.stderr) == (0, "", "")
     assert stubs.tmux.calls() == []
 
@@ -312,6 +351,14 @@ def test_the_console_script_writes_the_state(stubs):
     result = script("PermissionRequest", json.dumps({"hook_event_name": "PermissionRequest"}))
     assert (result.returncode, result.stdout, result.stderr) == (0, "", "")
     assert after(stubs) == "lead:working:lead"
+
+
+def test_a_session_start_prints_nothing_for_claude_to_read(stubs):
+    """Claude Code adds a SessionStart hook's stdout to the session's context."""
+    stored(stubs, "::")
+    result = script("SessionStart", json.dumps({"hook_event_name": "SessionStart"}))
+    assert (result.returncode, result.stdout, result.stderr) == (0, "", "")
+    assert after(stubs) == "lead:idle:"
 
 
 @pytest.fixture
@@ -397,6 +444,30 @@ def test_answering_that_prompt_alerts_done_unless_viewed(stubs, played, viewed, 
     assert after(stubs) == "lead:done:"
     assert alerts(stubs) == expected
     assert played == ([True] if expected else [])
+
+
+@pytest.mark.parametrize(
+    ("source", "before"),
+    [
+        ("startup", "::"),
+        ("startup", "lead:working:a1"),
+        ("resume", "lead:done:lead"),
+        ("compact", "::"),
+        ("clear", "::"),
+        ("fork", "::"),
+    ],
+)
+def test_a_session_start_never_alerts(stubs, played, source, before):
+    stored(stubs, before)
+    fire("SessionStart", source=source)
+    assert after(stubs) == "lead:idle:"
+    assert alerts(stubs) == []
+    assert played == []
+    assert [call[0] for call in stubs.tmux.calls()] == [
+        "display-message",
+        "set-option",
+        "list-sessions",
+    ]
 
 
 def test_another_prompt_while_one_is_pending_does_not_alert_again(stubs, played):

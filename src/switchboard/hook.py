@@ -18,9 +18,12 @@ INTERACTIVE_TOOLS = frozenset({"AskUserQuestion", "ExitPlanMode"})
 TOOL_DONE = frozenset({"PostToolUse", "PostToolUseFailure"})
 TURN_END = frozenset({"Stop", "StopFailure", "TeammateIdle"})
 HANDLED = (
-    TOOL_DONE | TURN_END | {"UserPromptSubmit", "PermissionRequest", "SubagentStop", "SessionEnd"}
+    TOOL_DONE
+    | TURN_END
+    | {"UserPromptSubmit", "PermissionRequest", "SubagentStop", "SessionStart", "SessionEnd"}
 )
 SESSION_KEPT = frozenset({"clear", "resume"})
+NEW_CLAUDE = frozenset({"startup", "resume"})
 PANE_FORMAT = "\t".join(f"#{{{name}}}" for name in ("session_name", ps.ROLE, ps.TURN, ps.PENDING))
 CLIENTS = ("list-clients", "-F", "#{client_name}\t#{client_session}")
 
@@ -65,8 +68,9 @@ def changed(session: str, before: State, after: State, clients: list[Client]) ->
 def apply(event: str, payload: dict, pane: str, stored: State, viewed: bool) -> State:
     """The new (role, turn, pending) of `pane`, whose options hold `stored`."""
     stored_role, stored_turn, stored_pending = stored
+    fresh = event == "SessionStart" and payload.get("source") in NEW_CLAUDE
     key = _key(payload)
-    role = _role(event, key, stored_role, pane)
+    role = _role(event, key, "" if fresh else stored_role, pane)
     turn = stored_turn if stored_turn in ps.TURNS else ps.IDLE
     keys = set(ps.decode_pending(stored_pending))
     if event == "UserPromptSubmit":
@@ -89,7 +93,7 @@ def apply(event: str, payload: dict, pane: str, stored: State, viewed: bool) -> 
     elif event in TURN_END:
         keys.discard(ps.LEAD_KEY)
         turn = ps.IDLE if role == ps.TEAMMATE or viewed else ps.DONE
-    elif event == "SessionEnd":
+    elif event == "SessionEnd" or fresh:
         keys.clear()
         turn = ps.IDLE
     return role, turn, ps.encode_pending(keys)

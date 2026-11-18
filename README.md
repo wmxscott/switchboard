@@ -55,6 +55,7 @@ Git status is read for every worktree at once, with a one-second limit. A slow o
 | ● | working | It's busy on a turn |
 | ○ | idle | It's waiting for a prompt, and you've seen it |
 
+- **Starting Claude Code** shows it idle at once, before its first prompt. So does `claude --continue` in a restored pane.
 - **Sending a prompt** makes an agent working.
 - **A permission prompt or a question** makes it needs you. That includes a subagent's, which shows on its lead's pane. **It stays when you visit,** and clears once you answer and the agent carries on, or you send a new prompt.
 - **Finishing a turn** makes it done. If a client is already viewing that session, it goes straight to idle with no alert, since you watched it finish.
@@ -135,6 +136,9 @@ To wire them yourself, add this to `~/.claude/settings.json`:
 ```json
 {
   "hooks": {
+    "SessionStart": [
+      { "hooks": [{ "type": "command", "command": "switchboard hook SessionStart" }] }
+    ],
     "UserPromptSubmit": [
       { "hooks": [{ "type": "command", "command": "switchboard hook UserPromptSubmit" }] }
     ],
