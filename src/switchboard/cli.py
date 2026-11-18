@@ -52,6 +52,13 @@ def _main(argv: list[str]) -> int:
     p.set_defaults(func=cmd_refresh)
 
     p = sub.add_parser("sidebar", help="the picker's list, compact and live, in this pane")
+    p.add_argument(
+        "--toggle",
+        nargs="?",
+        const="",
+        metavar="PANE",
+        help="close the sidebar in PANE's window, or open one there; by default, this pane's",
+    )
     p.set_defaults(func=cmd_sidebar)
 
     args = parser.parse_args(argv)
@@ -126,7 +133,10 @@ def cmd_sidebar(args) -> int:
     from switchboard import picker, sidebar
 
     try:
-        return sidebar.show()
+        if args.toggle is None:
+            return sidebar.show()
+        sidebar.toggle(args.toggle)
+        return 0
     except picker.PickerError as error:
         _err(str(error))
         return 1

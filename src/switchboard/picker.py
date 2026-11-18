@@ -35,7 +35,7 @@ SEARCH_HINT = "↑/↓ move · tab fold · ↵ switch · esc back"
 LOOK = ("--layout=reverse", "--height=100%", "--border=none", "--margin=0", "--padding=0")
 PREVIEW = "right,60%,border-left,noinfo"
 
-DOT, DOT_FILL = "\uf4c3", "\uf444"  # nf-oct-dot, nf-oct-dot_fill
+DOT, DOT_FILL = "\ueabc", "\uf111"  # nf-cod-circle, nf-fa-circle
 OPEN, SHUT = "\uf0d7", "\uf0da"  # nf-fa-caret_down, nf-fa-caret_right
 HERE = "\uf192"  # nf-fa-circle_dot
 ICON = {ps.NEEDS: DOT_FILL, ps.DONE: DOT_FILL, ps.WORKING: DOT_FILL, ps.IDLE: DOT}
@@ -45,6 +45,7 @@ SUMMED = (ps.NEEDS, ps.DONE, ps.WORKING)
 TEXT, BOLD, DIM, LINE = "text", "bold text", "subtext0", "overlay1"
 MUTED, CURRENT = "dim overlay0", "bold green"
 WIDTH, NARROW = 40, 20
+NARROW_TITLE = NARROW + 3  # a shut header with its dot as wide as a worktree row
 
 MODEL, FOLDED = "model.json", "folded.json"
 
@@ -160,7 +161,8 @@ def back(hint: str) -> str:
 
 def render(found: Model, current: str, compact: bool = False) -> list[Group]:
     """Each group's title, its header open and shut, and its lines: the repos, then "other". The
-    compact list has no agent lines, counts or git status, and cuts long names short."""
+    compact list has no agent lines, counts or git status, and cuts long names short. Its shut
+    header shows the group's most urgent dot instead, so that a fold never hides one."""
     named: list[tuple[str, Mapping[str, int], Sequence[Row]]] = [
         (str(repo.label) if repo.label else repo.name, repo.counts, repo.rows)
         for repo in found.repos
@@ -181,11 +183,14 @@ def render(found: Model, current: str, compact: bool = False) -> list[Group]:
                 for n, agent in enumerate(() if compact else row.agents)
             ]
         shown = {} if compact else counts
+        name = _cut(title, NARROW_TITLE) if compact else title
+        state = ps.most_urgent(counts) if compact else None
+        dot = f" {sgr(SGR[state], ICON[state])}" if state else ""
         groups.append(
             {
                 "title": title,
-                "open": _line("", index, _header(OPEN, title, shown)),
-                "shut": _line("", index, _header(SHUT, title, shown)),
+                "open": _line("", index, _header(OPEN, name, shown)),
+                "shut": _line("", index, _header(SHUT, name, shown) + dot),
                 "rows": body,
             }
         )
@@ -246,9 +251,7 @@ def _worktree(row: Row, current: str, width: int, status_width: int, cut: bool =
     status = _status(row) if status_width else ""
     column = sgr(DIM, status) + " " * (status_width - len(status)) if status else " " * status_width
     gap = "  " if status_width else ""
-    text = _name(row)
-    if cut and len(text) > width:
-        text = text[: width - 1] + "…"
+    text = _cut(_name(row), width) if cut else _name(row)
     name = sgr(TEXT, text) + " " * (width - len(text))
     return f"{sgr(LINE, '│')} {mark} {name}{gap}{column}  {icon}".rstrip()
 
@@ -269,6 +272,10 @@ def _agent(agent: Pane, last: bool) -> str:
 def describe(agent: Pane) -> str:
     who = "teammate" if agent.role == ps.TEAMMATE else agent.agent or ps.CLAUDE
     return f"{who} · win {agent.window} · {WORD[agent.state]}"
+
+
+def _cut(text: str, width: int) -> str:
+    return text[: width - 1] + "…" if len(text) > width else text
 
 
 def _name(row: Row) -> str:
