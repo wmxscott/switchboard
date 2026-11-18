@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | in progress · next: A4 |
+| **Status** | in progress · next: A5 |
 | **Updated** | 2026-11-18 |
 | **Tracker** | — |
 | **Related** | [approved design](../superpowers/specs/2026-11-18-switchboard-design.md); wkt's `docs/plans/too7nn-tmux-mode.md` (S5, S19, S21); dotfiles `docs/superpowers/specs/2026-11-16-tmux-core-design.md` |
@@ -297,3 +297,4 @@ Ask of every PR:
 - 2026-11-18: phase A1 landed as #2. gh-harden now requires `secrets` and the four `test (…)` matrix jobs.
 - 2026-11-18: phase A2 landed as #3. The pane options are `@switchboard-role`, `-turn`, `-pending` and `-at` (in `panestate.py`). A pane without its own value inherits a window-level option in formats, so A3 must always use `set-option -p`.
 - 2026-11-18: phase A3 landed as #4. Plan amended with S10 and the as-built event mapping: `StopFailure`, `ExitPlanMode`, `TeammateIdle` and team-config detection; subagent prompts survive the lead's `Stop`; `/clear` and `/resume` keep the role. The hook takes about 23 ms per `PostToolUse` on a real tmux, so the shell fast path isn't needed.
+- 2026-11-18: phase A4 landed as #5. Alerts fire on changes to the displayed state only (a lead stopping with a prompt pending stays ▲ and doesn't alert "done"). `SessionEnd` always refreshes. For R2, the hook must quote with `#{q:session_name}`.
