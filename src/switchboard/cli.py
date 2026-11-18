@@ -11,6 +11,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     # The hook runs on every Claude tool call: skip argparse.
     if argv[:1] == ["hook"]:
         return cmd_hook(argv[1:])
+    if argv[:1] in (["__rows"], ["__fold"]):
+        return cmd_picker_reload(argv)
     return _main(argv)
 
 
@@ -66,8 +68,24 @@ def cmd_hook(args: list[str]) -> int:
 
 
 def cmd_pick(args) -> int:
-    _err("the picker isn't built yet")
-    return 1
+    from switchboard import picker
+
+    try:
+        return picker.pick()
+    except picker.PickerError as error:
+        _err(str(error))
+        return 1
+
+
+def cmd_picker_reload(argv: list[str]) -> int:
+    """The picker's own fzf bindings: `__rows <folder>` and `__fold <folder> <group>`."""
+    from switchboard import picker
+
+    if argv[0] == "__rows":
+        sys.stdout.write(picker.rows(argv[1]))
+    else:
+        print(picker.fold(argv[1], argv[2]))
+    return 0
 
 
 def cmd_seen(args) -> int:

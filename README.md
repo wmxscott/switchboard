@@ -18,7 +18,7 @@ Agent state comes from Claude Code's hooks and lives in tmux pane options. There
 
 ### From source
 
-Needs Python 3.11 or later, tmux and [fzf](https://github.com/junegunn/fzf).
+Needs Python 3.11 or later, tmux and [fzf](https://github.com/junegunn/fzf) 0.59 or later.
 
 ```sh
 uv tool install git+https://github.com/wmxscott/switchboard
