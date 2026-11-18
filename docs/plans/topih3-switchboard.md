@@ -289,7 +289,7 @@ Ask of every PR:
 ## Not doing
 
 - **Selecting an agent or window from the switcher:** deferred (Design § Non-goals).
-- **Agents other than Claude Code, an agents panel, macOS banners, other machines:** out of scope (Design § Non-goals).
+- **An agents panel, macOS banners, other machines:** out of scope (Design § Non-goals). ~~Agents other than Claude Code~~: now planned in `topsnz-more-agents.md`.
 - **Where the project list lives long-term:** deferred to project 4.
 - **Screen-scraping panes to detect state:** rejected. It's fragile, and Claude's hooks cover the cases except the accepted limitation.
 
@@ -304,3 +304,4 @@ Ask of every PR:
 - 2026-11-18: phase A6 landed as #7. `↑` is left out when origin has no branches. A few hook tests depend on the 2-second `run.TIMEOUT` and could fail under heavy load; harden them if CI does.
 - 2026-11-18: phase A7 landed as #8 (switchboard 1.0.0). It needs tmux 3.8 (theme colour names). Known follow-up: a session name starting with `$` makes `=$name` read as a session id, so `refresh` (and the switch) fail for it. wkt's names never start with `$`. Fix by targeting sessions by id in a later release.
 - 2026-11-18: phase R1 landed as homebrew-tap#16, with `brew install` done. B1 landed as ai-toolkit#33 (the hook script always exits 0), installed for the user, and added to the private `shared:claude` mise task (dotfiles-private#5). R2 landed as dotfiles#50: `prefix w` (falling back to choose-tree), the `client-session-changed` hook with `#{q:session_name}`, refresh on load, and the Brewfile entry. Every stack has landed.
+- 2026-11-18: 1.0.1 shipped (#10): SessionStart is handled, and startup/resume reset the pane. Codex, Pi and per-agent status counts continue in `topsnz-more-agents.md`.
