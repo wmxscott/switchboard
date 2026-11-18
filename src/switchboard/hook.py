@@ -18,7 +18,9 @@ INTERACTIVE_TOOLS = frozenset({"AskUserQuestion", "ExitPlanMode"})
 TOOL_DONE = frozenset({"PostToolUse", "PostToolUseFailure"})
 TURN_END = frozenset({"Stop", "StopFailure", "TeammateIdle"})
 HANDLED = (
-    TOOL_DONE | TURN_END | {"UserPromptSubmit", "PermissionRequest", "SubagentStop", "SessionEnd"}
+    TOOL_DONE
+    | TURN_END
+    | {"UserPromptSubmit", "PermissionRequest", "SubagentStop", "SessionStart", "SessionEnd"}
 )
 SESSION_KEPT = frozenset({"clear", "resume"})
 PANE_FORMAT = "\t".join(f"#{{{name}}}" for name in ("session_name", ps.ROLE, ps.TURN, ps.PENDING))

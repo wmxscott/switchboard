@@ -91,6 +91,7 @@ Agent keys are `lead` or the payload's `agent_id`.
 | `SubagentStop`; `TeammateIdle` or `StopFailure` carrying an `agent_id` | remove that agent's key |
 | `Stop`, `StopFailure`, `TeammateIdle` (no `agent_id`) | remove only the lead's key; turn → done, or idle if a client views the session or the pane is a teammate. `TeammateIdle` also marks the pane a teammate |
 | `Notification` `idle_prompt` | working → idle |
+| `SessionStart`, any source | role kept, or detected when missing; turn → idle only when the pane has none; pending untouched (added in 1.0.1) |
 | `SessionEnd` with reason clear or resume | turn idle, pending cleared, role kept |
 | `SessionEnd`, any other reason | unset all four options |
 
