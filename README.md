@@ -4,9 +4,10 @@
 
 A keyboard-only tmux session switcher for people who run coding agents in tmux: Claude Code, Codex and Pi. It groups your sessions by git repository, and shows which agents are working, which are done, and which need you.
 
-There are four pieces:
+There are five pieces:
 
 - **The picker.** One key opens it in a popup. It lists every session as repo → worktree → agents, with each agent's state, and previews the highlighted session. `j`/`k` and Enter switch, and `q` closes. No mouse.
+- **The sidebar.** Another key opens the picker's list, compact, in a narrow pane on the left of the window. It stays open and redraws itself as states change.
 - **The status-bar segment.** It names the other sessions whose agents need you or are done.
 - **The alert.** A tmux message on every client and a short sound, when an agent in a session no one is looking at needs you or finishes.
 - **The hook.** Each agent runs `switchboard hook [--agent NAME] <event>` on its events, and that keeps its state up to date. Claude Code and Codex run it from their hooks, and Pi from an extension. Other agents can be [added](#adding-an-agent).
@@ -53,6 +54,53 @@ The picker's colours are Catppuccin Latte in light mode and Macchiato in dark mo
 
 The header shows the keys that work at the moment, and changes when you search.
 
+## The sidebar
+
+```
+j/k move · / search
+tab fold · ↵ switch
+
+▸ gadget ●
+▾ widget
+│ ◉ main       ●
+│   fix-login  ●
+▾ other
+│   notes
+```
+
+`prefix b` opens it in a 32-column pane on the left of the current window, and closes it again. The focus stays where it was.
+
+- **It shows** the picker's list, compact: repo headers, and worktree rows with their state dot. Agents fold into the dot. There are no counts, no git status and no preview, and long names are cut short with `…`.
+- **A folded repo** shows the dot of its most urgent state after its name, so a fold never hides a session that needs you. An open repo's header has no dot.
+- **The keys** are the picker's: `j`/`k`, `/` to search, Tab to fold, and Enter or a double click to switch. Nothing in the sidebar closes it: `q` does nothing, and Esc only leaves a search. Close it with `prefix b` again, or Ctrl-C.
+- **Enter switches** the client viewing the sidebar to the highlighted session. The sidebar stays in its window: it doesn't follow you to the other session.
+- **It redraws live.** Every state change, every switch of session, and every `switchboard refresh` asks each open sidebar to reload. So does each session created or closed, with the hooks in [tmux setup](#tmux-setup). There's no polling.
+
+Each sidebar's fzf listens on a local port, which it records with a random key in its pane's `@switchboard-sidebar` option. That option is also how `prefix b` finds the window's sidebar. A pane it has just opened holds `starting` until fzf records its port.
+
+### The binding
+
+```tmux
+bind b run-shell "switchboard sidebar --toggle #{pane_id}"
+```
+
+`run-shell` gives the command no `$TMUX_PANE`, so the binding passes the pane in `#{pane_id}`, which tmux fills in. It prints nothing unless it fails. Pick any key you like.
+
+### tmux-resurrect
+
+[tmux-resurrect](https://github.com/tmux-plugins/tmux-resurrect) restores a sidebar as a running sidebar with this line:
+
+```tmux
+set -g @resurrect-processes '"~switchboard sidebar->switchboard sidebar"'
+```
+
+- **What it matches.** tmux-resurrect saves the command that each pane's shell is running. `prefix b` runs the sidebar under `sh`, so it saves as `<python> -m switchboard sidebar`, and a restored one as `<python> <path>/switchboard sidebar`. `~` matches `switchboard sidebar` anywhere in that command.
+- **What it runs.** `->` types plain `switchboard sidebar` into the restored pane's shell, so `switchboard` must be on that shell's `PATH`.
+- **The layout** comes back too, so the pane keeps its width and its place.
+- **Other programs** go in the same quoted list, such as `'"~switchboard sidebar->switchboard sidebar" vim'`.
+
+A restored sidebar runs in a shell, so Ctrl-C leaves that shell open where a sidebar from `prefix b` would close its pane. `prefix b` closes either.
+
 ## States
 
 | Picker | Status bar | State | Means |
@@ -83,8 +131,8 @@ Interrupting a turn sends no event either, so the agent shows working until Clau
 ## Requirements
 
 - **tmux 3.8 or later.** The status-bar segment uses tmux 3.8's theme colours.
-- **[fzf](https://github.com/junegunn/fzf) 0.59 or later**, for the picker.
-- **A [Nerd Font](https://www.nerdfonts.com)** in your terminal, for the picker's icons.
+- **[fzf](https://github.com/junegunn/fzf) 0.59 or later**, for the picker and the sidebar.
+- **A [Nerd Font](https://www.nerdfonts.com)** in your terminal, for the picker's and the sidebar's icons.
 - **Python 3.11 or later**, when installing from source.
 - **A coding agent**, for agent state. Without one, switchboard is a plain session switcher:
   - **Claude Code**
@@ -115,14 +163,19 @@ Add these lines to your tmux config:
 
 ```tmux
 bind w display-popup -E -w 90% -h 80% -d "#{pane_current_path}" switchboard
+bind b run-shell "switchboard sidebar --toggle #{pane_id}"
 set-hook -g client-session-changed 'run-shell -b "switchboard seen #{q:session_name}"'
+set-hook -g session-created 'run-shell -b "switchboard refresh"'
+set-hook -g session-closed 'run-shell -b "switchboard refresh"'
 run-shell -b "switchboard refresh"
 set -g status-right "#{E:@attention}"
 set -g status-right-length 80
 ```
 
 - **`prefix w`** opens the picker in a popup. Pick any key you like.
+- **`prefix b`** opens or closes [the sidebar](#the-sidebar).
 - **`client-session-changed`** runs `switchboard seen` for the session you've switched to, which marks its done agents seen. `#{q:…}` quotes the name for the shell, so names with spaces, quotes or `$` are safe.
+- **`session-created` and `session-closed`** refresh when a session comes or goes, so open sidebars add or drop it, and no status bar keeps naming a closed session. Without them, that waits for the next state change.
 - **`switchboard refresh`** fills the status bar when the config loads. After that, every change refreshes it.
 - **`#{E:@attention}`** shows the segment. switchboard sets `@attention` on each session, as a format with tmux's theme colours, which `E:` expands. To keep an existing `status-right`, add `#{E:@attention}` to it rather than replacing it.
 - **`status-right-length`** defaults to 40, which cuts the list short. The segment needs about 60, plus whatever else is on the right.
@@ -255,9 +308,11 @@ The limits:
 | `switchboard hook [--agent NAME] <event>` | An agent's hook, with the event's JSON on stdin. The agent is `claude` by default. See [Claude Code setup](#claude-code-setup) and [Adding an agent](#adding-an-agent) |
 | `switchboard state <verb> [--agent NAME]` | Set this pane's agent state, for a tool with no adapter. See [Without an adapter](#without-an-adapter) |
 | `switchboard seen [session]` | Turn a session's done agents idle, then refresh. By default, the current session |
-| `switchboard refresh` | Rebuild every session's `@attention` |
+| `switchboard refresh` | Rebuild every session's `@attention`, and redraw every open sidebar |
+| `switchboard sidebar` | Show [the sidebar](#the-sidebar) in this pane, until Ctrl-C |
+| `switchboard sidebar --toggle [PANE]` | Close the sidebar in `PANE`'s window, or open one on its left. By default, this pane. It prints nothing unless it fails |
 
-Outside tmux, every command but the picker exits 0 and does nothing. `state` still checks its arguments.
+Outside tmux, the picker and both sidebar commands exit 1 with a message. Every other command exits 0 and does nothing, and `state` still checks its arguments.
 
 ## Project labels
 

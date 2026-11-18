@@ -12,7 +12,7 @@ import pytest
 
 from switchboard import preview
 
-DOT, FILL, HERE = "\uf4c3", "\uf444", "\uf192"
+DOT, FILL, HERE = "\ueabc", "\uf111", "\uf192"
 FORMAT = (
     "#{session_path}\t#{window_index}\t#{window_active}\t#{pane_id}\t#{pane_active}"
     "\t#{pane_current_command}\t#{@switchboard-role}\t#{@switchboard-turn}"

@@ -3,7 +3,8 @@ client viewing it, and the sidebar stays.
 
 Its fzf listens on a local port, which it records with its API key in its pane's
 `@switchboard-sidebar`. `refresh` finds them there, in the pane read it already makes, and asks
-each sidebar to reload.
+each sidebar to reload. `--toggle` finds a window's sidebar by the same option, which it sets to
+`starting` on a pane it opens until fzf records its port.
 """
 
 from __future__ import annotations
@@ -27,6 +28,8 @@ HINT = "j/k move · / search\ntab fold · ↵ switch"
 SEARCH_HINT = "↑/↓ move · tab fold\n↵ switch · esc back"
 HOST = "127.0.0.1"
 TIMEOUT = 0.2
+COLUMNS = 32
+STARTING = "starting"
 
 
 def show() -> int:
@@ -59,6 +62,31 @@ def show() -> int:
     if result.returncode not in (0, 1, 130):
         raise picker.PickerError(f"fzf exited with status {result.returncode}")
     return result.returncode
+
+
+def toggle(pane: str) -> None:
+    """Closes the sidebar in `pane`'s window, or opens one on its left without moving the focus."""
+    pane = pane or os.environ.get("TMUX_PANE", "")
+    if not pane or not os.environ.get("TMUX"):
+        raise picker.PickerError("the sidebar only runs inside tmux")
+    found = run.output("tmux", "list-panes", "-F", f"#{{pane_id}}\t#{{{tmux.SIDEBAR}}}", "-t", pane)
+    if found is None:
+        raise picker.PickerError(f"can't find pane {pane}")
+    shown = [line.partition("\t") for line in found.splitlines()]
+    sidebars = [pane_id for pane_id, _, value in shown if value]
+    if sidebars:
+        if run.tmux(*(("kill-pane", "-t", pane_id) for pane_id in sidebars)) is None:
+            raise picker.PickerError("can't close the sidebar")
+        return
+    # tmux-resurrect saves the command a pane's shell runs, so the sidebar runs under one. `; exit`
+    # keeps `sh` from exec'ing it.
+    launch = ("sh", "-c", f"{shlex.join([*picker.command(), 'sidebar'])}; exit")
+    split = ("split-window", "-hbd", "-l", str(COLUMNS), "-P", "-F", "#{pane_id}", "-t", pane)
+    opened = (run.output("tmux", *split, *launch) or "").strip()
+    if not opened:
+        raise picker.PickerError("can't open the sidebar")
+    # `-o`: fzf may already have recorded its port.
+    run.tmux(("set-option", "-p", "-o", "-q", "-t", opened, tmux.SIDEBAR, STARTING))
 
 
 def fzf_args(folder: str, at: int | None) -> list[str]:

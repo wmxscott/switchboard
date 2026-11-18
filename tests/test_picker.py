@@ -23,7 +23,7 @@ from switchboard.tmux import Pane, Session
 
 CLIENT = "/dev/ttys001"
 KEYS = "j:down,k:up,q:abort"
-DOT, FILL, OPEN, SHUT, HERE = "\uf4c3", "\uf444", "\uf0d7", "\uf0da", "\uf192"
+DOT, FILL, OPEN, SHUT, HERE = "\ueabc", "\uf111", "\uf0d7", "\uf0da", "\uf192"
 TEXT, SUBTEXT, OVERLAY = "38;2;202;211;245", "38;2;165;173;203", "38;2;128;135;162"
 RED, GREEN, PEACH = "38;2;237;135;150", "38;2;166;218;149", "38;2;245;169;127"
 HINTS = "j/k move · / search · tab fold · ↵ switch · q/esc close"

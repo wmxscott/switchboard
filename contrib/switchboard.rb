@@ -1,11 +1,11 @@
-# Draft formula for wmxscott/homebrew-tap. Fill in sha256 once v1.1.0 is tagged:
-#   curl -sL https://github.com/wmxscott/switchboard/archive/refs/tags/v1.1.0.tar.gz | shasum -a 256
+# Draft formula for wmxscott/homebrew-tap. Fill in sha256 once v1.2.0 is tagged:
+#   curl -sL https://github.com/wmxscott/switchboard/archive/refs/tags/v1.2.0.tar.gz | shasum -a 256
 class Switchboard < Formula
   include Language::Python::Virtualenv
 
   desc "Keyboard-only tmux session switcher with coding agent state"
   homepage "https://github.com/wmxscott/switchboard"
-  url "https://github.com/wmxscott/switchboard/archive/refs/tags/v1.1.0.tar.gz"
+  url "https://github.com/wmxscott/switchboard/archive/refs/tags/v1.2.0.tar.gz"
   sha256 "0000000000000000000000000000000000000000000000000000000000000000"
   license "MIT"
   head "https://github.com/wmxscott/switchboard.git", branch: "main"

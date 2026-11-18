@@ -26,7 +26,7 @@ from switchboard.tmux import Pane, Session
 PANE = "%5"
 SCRIPT = os.path.join(os.path.dirname(sys.executable), "switchboard")
 SELF = [sys.executable, "-m", "switchboard"]
-DOT, FILL, OPEN, SHUT, HERE = "", "", "", "", ""
+DOT, FILL, OPEN, SHUT, HERE = "\ueabc", "\uf111", "\uf0d7", "\uf0da", "\uf192"
 TEXT, OVERLAY = "38;2;202;211;245", "38;2;128;135;162"
 RED, GREEN, PEACH = "38;2;237;135;150", "38;2;166;218;149", "38;2;245;169;127"
 MUTED = "2;38;2;110;115;141"
@@ -157,6 +157,36 @@ def test_the_picker_keeps_its_full_list():
     groups = picker.render(fixture(), "w/main")
     assert len(list(picker.lines(groups))) == len(COMPACT) + 5
     assert "~2 ↑13" in plain(groups[1]["rows"][0])
+
+
+def test_a_folded_repo_shows_its_most_urgent_dot():
+    plainer = Repo("/p", "plain", "main", (worktree("p", "main", "/p"),))
+    found = Model((gadget(), widget(), plainer), fixture().other)
+    groups = picker.render(found, "w/main", compact=True)
+    shut = [line.split("\t")[2] for line in picker.lines(groups, folded=range(4))]
+    assert [plain(line) for line in shut] == [
+        f"{SHUT} gadget {FILL}",
+        f"{SHUT} W tools/widget {FILL}",
+        f"{SHUT} plain",
+        f"{SHUT} other {DOT}",
+    ]
+    assert shut[0].endswith(f" {esc(GREEN, FILL)}")
+    assert shut[1].endswith(f" {esc(RED, FILL)}")
+    assert shut[3].endswith(f" {esc(GREEN, DOT)}")
+
+
+def test_a_long_title_is_cut_short_to_keep_a_folded_repo_s_dot():
+    long = "x" * 40
+    found = Model(
+        (Repo("/w", long, "main", (worktree("w/a", "main", "/w", (1, "lead", "done")),)),)
+    )
+    groups = picker.render(found, "", compact=True)
+    shut = fields(picker.lines(groups, folded=[0]))[0][2]
+    assert shut == f"{SHUT} {long[:22]}… {FILL}"
+    assert len(shut) == 27
+    assert fields(picker.lines(groups))[0][2] == f"{OPEN} {long[:22]}…"
+    assert groups[0]["title"] == long
+    assert fields(picker.lines(picker.render(found, "")))[0][2].startswith(f"{OPEN} {long}  ")
 
 
 @pytest.fixture
@@ -336,7 +366,7 @@ def test_redraw_rebuilds_the_list_and_keeps_folded_repos_folded(stubs, monkeypat
         ("alpha", "0", f"│ {HERE} main    {FILL}"),
         ("", "1", f"{OPEN} gadget"),
         ("gadget", "1", f"│   main    {FILL}"),
-        ("", "2", f"{SHUT} W tools/widget"),
+        ("", "2", f"{SHUT} W tools/widget {FILL}"),
     ]
     assert json.loads((folder / picker.FOLDED).read_text()) == [2]
     assert stubs.tmux.calls() == [["display-message", "-p", "-t", PANE, "#{session_name}"]]
@@ -416,7 +446,8 @@ def test_poke_posts_a_reload_with_the_api_key(listener):
 
 def test_poke_skips_dead_and_broken_endpoints_without_waiting(listener):
     start = time.perf_counter()
-    sidebar.poke([f"{dead_port()} k", "", "junk", "99999 k", "-1 k", f"{listener.port} k"])
+    endpoints = [f"{dead_port()} k", "", "junk", sidebar.STARTING, "99999 k", "-1 k"]
+    sidebar.poke([*endpoints, f"{listener.port} k"])
     assert time.perf_counter() - start < 1
     assert len(listener.requests(1)) == 1
 
@@ -474,3 +505,79 @@ def test_a_dead_sidebar_leaves_refresh_and_the_hook_silent(stubs):
         assert (result.returncode, result.stdout, result.stderr) == (0, "", "")
         assert time.perf_counter() - start < 3
     assert [call[0] for call in stubs.tmux.calls()].count("list-panes") == 2
+
+
+LIST = ["list-panes", "-F", "#{pane_id}\t#{@switchboard-sidebar}", "-t"]
+LAUNCH = ["sh", "-c", f"{shlex.join([*SELF, 'sidebar'])}; exit"]
+SPLIT = ["split-window", "-hbd", "-l", "32", "-P", "-F", "#{pane_id}", "-t"]
+TAG = ["set-option", "-p", "-o", "-q", "-t", "%8", "@switchboard-sidebar", "starting"]
+
+
+@pytest.fixture
+def window(stubs, monkeypatch):
+    """Inside tmux in pane %5, in a window with another pane and no sidebar."""
+    monkeypatch.setenv("TMUX", "/tmp/stub,1,0")
+    monkeypatch.setenv("TMUX_PANE", PANE)
+    stubs.tmux.answer("list-panes", stdout=f"{PANE}\t\n%6\t\n")
+    stubs.tmux.answer("split-window", stdout="%8\n")
+    return stubs
+
+
+def test_toggle_opens_a_sidebar_on_the_left_and_tags_it_quietly(window, capsys):
+    assert cli.main(["sidebar", "--toggle"]) == 0
+    assert capsys.readouterr() == ("", "")
+    assert window.tmux.calls() == [[*LIST, PANE], [*SPLIT, PANE, *LAUNCH], TAG]
+
+
+@pytest.mark.parametrize("tag", [sidebar.STARTING, "53122 k3y"])
+def test_toggle_closes_the_sidebar_in_its_window(window, capsys, tag):
+    window.tmux.answer("list-panes", stdout=f"%3\t{tag}\n{PANE}\t\n")
+    assert cli.main(["sidebar", "--toggle"]) == 0
+    assert capsys.readouterr() == ("", "")
+    assert window.tmux.calls() == [[*LIST, PANE], ["kill-pane", "-t", "%3"]]
+
+
+def test_toggle_takes_the_pane_from_a_key_binding(window, monkeypatch):
+    """`run-shell` sets `$TMUX` but not `$TMUX_PANE`, so the binding passes `#{pane_id}`."""
+    monkeypatch.delenv("TMUX_PANE")
+    assert cli.main(["sidebar", "--toggle", "%2"]) == 0
+    assert window.tmux.calls() == [[*LIST, "%2"], [*SPLIT, "%2", *LAUNCH], TAG]
+
+
+def test_a_failed_split_tags_nothing(window, capsys):
+    window.tmux.answer("split-window", code=1, stderr="no space for new pane\n")
+    assert cli.main(["sidebar", "--toggle"]) == 1
+    assert capsys.readouterr() == ("", "switchboard: can't open the sidebar\n")
+    assert window.tmux.calls() == [[*LIST, PANE], [*SPLIT, PANE, *LAUNCH]]
+
+
+def test_toggle_reports_a_pane_it_cant_find_or_close(window, capsys):
+    window.tmux.answer("list-panes", code=1, stderr="can't find pane: %2\n")
+    assert cli.main(["sidebar", "--toggle", "%2"]) == 1
+    assert capsys.readouterr().err == "switchboard: can't find pane %2\n"
+    window.tmux.answer("list-panes", stdout="%3\tstarting\n")
+    window.tmux.answer("kill-pane", code=1)
+    assert cli.main(["sidebar", "--toggle"]) == 1
+    assert capsys.readouterr().err == "switchboard: can't close the sidebar\n"
+
+
+@pytest.mark.parametrize(
+    ("env", "args"), [({}, []), ({"TMUX_PANE": PANE}, []), ({}, ["%2"]), ({"TMUX": "/s,1,0"}, [])]
+)
+def test_toggle_outside_tmux(stubs, monkeypatch, capsys, env, args):
+    for name, value in env.items():
+        monkeypatch.setenv(name, value)
+    assert cli.main(["sidebar", "--toggle", *args]) == 1
+    assert capsys.readouterr() == ("", "switchboard: the sidebar only runs inside tmux\n")
+    assert stubs.tmux.calls() == []
+
+
+def test_the_new_pane_runs_the_sidebar_and_ends_with_it(window):
+    """By the same executable, under a shell that stays its parent, as tmux-resurrect saves it."""
+    cli.main(["sidebar", "--toggle"])
+    launch = window.tmux.calls()[1][-3:]
+    window.fzf.reply("0.59.0\n")
+    window.fzf.reply(code=130)
+    result = subprocess.run(launch, capture_output=True, text=True, timeout=30, env=os.environ)
+    assert (result.returncode, result.stderr) == (130, "")
+    assert "--listen=127.0.0.1:0" in window.fzf.calls()[1]["args"]
