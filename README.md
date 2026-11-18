@@ -33,7 +33,7 @@ The picker draws its icons from a [Nerd Font](https://www.nerdfonts.com): the sk
 
 - **Repo headers** show the repo's name, or its [label](#project-labels), and how many of its sessions need you, are done or are working. A caret pointing down is open, and one pointing right is folded.
 - **Worktree rows** show the branch (in "other", the session's name), its git status and the most urgent agent's state. `~2` is two uncommitted changes, and `↑3` is three commits not pushed. A green circled dot marks the session you're in, and the cursor starts there.
-- **Agent rows** sit under their worktree, in a softer colour, each starting with its state's dot: `claude` for a Claude Code session, or `teammate` for an agent-team teammate in its own pane, with the window it's in.
+- **Agent rows** sit under their worktree, in a softer colour, each starting with its state's dot. Each names the agent by its label, `claude`, `codex` or `pi`, or `teammate` for an agent-team teammate in its own pane, then the window it's in.
 - **Order:** repos alphabetically, then "other" for sessions outside any repo. Within a repo, the default branch comes first, then the rest alphabetically.
 - **The preview** on the right shows the session's folder, its windows with an agent's icon on the window that holds it, and the last lines of its most urgent agent's pane, or of its active pane when it has no agents. So you can see what an agent is asking before you switch.
 
