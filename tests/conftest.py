@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import itertools
 import json
 import os
 import shutil
@@ -8,6 +9,7 @@ import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -209,3 +211,23 @@ def repos(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Repos:
         monkeypatch.setenv(f"GIT_{role}_EMAIL", "test@example.com")
     (tmp_path / "repos").mkdir()
     return Repos(tmp_path / "repos")
+
+
+@pytest.fixture
+def ps(tmp_path):
+    """A stub `ps` first on PATH. `ancestors(...)` lists them as this process's parents, nearest
+    first, with an unrelated process 999 beside them."""
+    out, log, path = tmp_path / "ps-out", tmp_path / "ps-log", tmp_path / "bin" / "ps"
+
+    def ancestors(*pids: int, code: int = 0) -> None:
+        chain = [os.getpid(), *pids, 1, 0]
+        rows = [*itertools.pairwise(chain), (999, 1)]
+        out.write_text("".join(f"{pid:>6} {parent:>6}\n" for pid, parent in rows))
+        path.write_text(f'#!/bin/sh\necho "$@" >> "{log}"\ncat "{out}"\nexit {code}\n')
+        path.chmod(0o755)
+
+    def calls() -> list[str]:
+        return log.read_text().splitlines() if log.exists() else []
+
+    ancestors(500, 400)
+    return SimpleNamespace(ancestors=ancestors, calls=calls)
