@@ -1,3 +1,3 @@
-"""Switch between tmux sessions, and see which Claude Code agents need you."""
+"""Switch between tmux sessions, and see which coding agents need you."""
 
-__version__ = "1.0.1"
+__version__ = "1.1.0"
