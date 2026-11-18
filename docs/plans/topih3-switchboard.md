@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | in progress · next: R1 (Stack A landed) |
+| **Status** | landed. Only the user's Ghostty checks are left |
 | **Updated** | 2026-11-18 |
 | **Tracker** | — |
 | **Related** | [approved design](../superpowers/specs/2026-11-18-switchboard-design.md); wkt's `docs/plans/too7nn-tmux-mode.md` (S5, S19, S21); dotfiles `docs/superpowers/specs/2026-11-16-tmux-core-design.md` |
@@ -15,9 +15,9 @@
 
 ### Done when
 
-- [ ] switchboard 1.0.0 is released through the tap. CI is green, and `gh-harden` requires its checks.
-- [ ] The ai-toolkit `switchboard` plugin is merged and installed on this machine.
-- [ ] The dotfiles bind `prefix w` to switchboard, run `switchboard seen` on `client-session-changed`, and refresh `@attention` on load.
+- [x] switchboard 1.0.0 is released through the tap. CI is green, and `gh-harden` requires its checks.
+- [x] The ai-toolkit `switchboard` plugin is merged and installed on this machine.
+- [x] The dotfiles bind `prefix w` to switchboard, run `switchboard seen` on `client-session-changed`, and refresh `@attention` on load.
 - [ ] In the user's real tmux, in Ghostty:
   - `prefix w` lists worktree sessions grouped by repo, with project icons, and `j`/`k`/Enter switch.
   - A permission prompt in another session shows ▲ in the status bar, plus an alert and a sound. It clears once the agent works again.
@@ -146,13 +146,13 @@ Agent keys are `lead` or the payload's `agent_id`.
 | A6 | The preview and git status in rows | A5 |
 | A7 | README, the draft formula, release 1.0.0 | A6 |
 
-- [ ] A1: skeleton
-- [ ] A2: tmux and git model
-- [ ] A3: hook
-- [ ] A4: refresh, seen, alert
-- [ ] A5: picker
-- [ ] A6: preview and git status
-- [ ] A7: release 1.0.0
+- [x] A1: skeleton
+- [x] A2: tmux and git model
+- [x] A3: hook
+- [x] A4: refresh, seen, alert
+- [x] A5: picker
+- [x] A6: preview and git status
+- [x] A7: release 1.0.0
 
 **A1: skeleton**
 - **What changes:**
@@ -233,7 +233,7 @@ This is a single PR in `wmxscott/ai-toolkit`, so it owns no paths here.
 |---|---|---|
 | B1 | `plugins/switchboard`: `hooks.json` wiring the S7 events to `switchboard hook <event>`, a README, tests, and marketplace entries, following ai-toolkit's `CLAUDE.md` | A3 |
 
-- [ ] B1: ai-toolkit switchboard plugin
+- [x] B1: ai-toolkit switchboard plugin
 
 **B1 note:**
 - The hook command exits 0 silently when `switchboard` isn't on `PATH` or `$TMUX_PANE` is unset.
@@ -254,8 +254,8 @@ This is a single PR in `wmxscott/ai-toolkit`, so it owns no paths here.
 | R1 | `wmxscott/homebrew-tap`: `Formula/switchboard.rb` at `v1.0.0`; `brew install` on this machine; switchboard added to the dotfiles Brewfile (`stow/brew/.Brewfile`) | A7 |
 | R2 | `wmxscott/dotfiles`: `prefix w` opens switchboard in a popup; `client-session-changed` runs `switchboard seen`; the config runs `switchboard refresh` on load; the tmux core design's key table updated | R1, B1 |
 
-- [ ] R1: tap formula, install and Brewfile
-- [ ] R2: dotfiles bindings
+- [x] R1: tap formula, install and Brewfile
+- [x] R2: dotfiles bindings
 
 **R2 note:**
 - The popup's command has no `#{}`, and its folder comes from `-d` (S4).
@@ -301,3 +301,4 @@ Ask of every PR:
 - 2026-11-18: phase A5 landed as #6. Colours use the 16 ANSI colours (`--color=16`). The pinned client is right when a key on that client opens the popup, which is how the binding works; a popup opened from outside tmux isn't covered, as with wkt. The README's "every command is a stub" line is left for A7.
 - 2026-11-18: phase A6 landed as #7. `↑` is left out when origin has no branches. A few hook tests depend on the 2-second `run.TIMEOUT` and could fail under heavy load; harden them if CI does.
 - 2026-11-18: phase A7 landed as #8 (switchboard 1.0.0). It needs tmux 3.8 (theme colour names). Known follow-up: a session name starting with `$` makes `=$name` read as a session id, so `refresh` (and the switch) fail for it. wkt's names never start with `$`. Fix by targeting sessions by id in a later release.
+- 2026-11-18: phase R1 landed as homebrew-tap#16, with `brew install` done. B1 landed as ai-toolkit#33 (the hook script always exits 0), installed for the user, and added to the private `shared:claude` mise task (dotfiles-private#5). R2 landed as dotfiles#50: `prefix w` (falling back to choose-tree), the `client-session-changed` hook with `#{q:session_name}`, refresh on load, and the Brewfile entry. Every stack has landed.
