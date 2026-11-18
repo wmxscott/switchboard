@@ -1,4 +1,5 @@
-"""The two tmux reads: every session, and every pane with its agent state."""
+"""The two tmux reads: every session, and every pane with its agent state and any sidebar's
+endpoint."""
 
 from __future__ import annotations
 
@@ -9,6 +10,7 @@ from dataclasses import dataclass
 from switchboard import panestate, run
 
 ATTENTION = "@attention"
+SIDEBAR = "@switchboard-sidebar"
 SESSION_FIELDS = (
     "session_name",
     "@wkt-worktree",
@@ -22,6 +24,7 @@ PANE_FIELDS = (
     "pane_id",
     "pane_current_command",
     *panestate.OPTIONS,
+    SIDEBAR,
 )
 
 
@@ -45,6 +48,7 @@ class Pane:
     pending: tuple[str, ...] = ()
     at: int = 0
     agent: str = ""
+    sidebar: str = ""
 
     @property
     def is_agent(self) -> bool:
@@ -72,8 +76,8 @@ def parse_sessions(text: str) -> list[Session]:
 
 def parse_panes(text: str) -> list[Pane]:
     return [
-        Pane(name, _int(win), pid, cmd, role, turn, panestate.decode_pending(keys), _int(at), agent)
-        for name, win, pid, cmd, role, turn, keys, at, agent in _rows(text, len(PANE_FIELDS))
+        Pane(name, _int(win), pid, cmd, role, turn, panestate.decode_pending(keys), _int(at), *rest)
+        for name, win, pid, cmd, role, turn, keys, at, *rest in _rows(text, len(PANE_FIELDS))
     ]
 
 

@@ -498,7 +498,9 @@ def test_no_change_neither_alerts_nor_refreshes(stubs, played):
 def test_the_refresh_after_a_change_updates_other_sessions(stubs, played):
     stored(stubs, "lead:working:")
     stubs.tmux.answer("list-sessions", stdout="work\t\t/w\t0\t\nother\t\t/o\t0\t\n")
-    stubs.tmux.answer("list-panes", stdout="work\t0\t%7\tclaude\tlead\tworking\tlead\t0\tclaude\n")
+    stubs.tmux.answer(
+        "list-panes", stdout="work\t0\t%7\tclaude\tlead\tworking\tlead\t0\tclaude\t\n"
+    )
     fire("PermissionRequest")
     writes = [call for call in stubs.tmux.calls() if "@attention" in call]
     assert writes == [

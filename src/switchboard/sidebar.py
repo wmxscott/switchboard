@@ -1,0 +1,135 @@
+"""The sidebar: the picker's list, compact and long-lived, in a pane of its own. Enter switches the
+client viewing it, and the sidebar stays.
+
+Its fzf listens on a local port, which it records with its API key in its pane's
+`@switchboard-sidebar`. `refresh` finds them there, in the pane read it already makes, and asks
+each sidebar to reload.
+"""
+
+from __future__ import annotations
+
+import contextlib
+import json
+import os
+import shlex
+import shutil
+import socket
+import subprocess
+import tempfile
+from collections.abc import Iterable
+from pathlib import Path
+
+from switchboard import picker, run, theme, tmux
+
+FOLDER = "SWITCHBOARD_SIDEBAR"
+KEYS = "j:down,k:up,q:ignore"
+HINT = "j/k move · / search\ntab fold · ↵ switch"
+SEARCH_HINT = "↑/↓ move · tab fold\n↵ switch · esc back"
+HOST = "127.0.0.1"
+TIMEOUT = 0.2
+
+
+def show() -> int:
+    pane = os.environ.get("TMUX_PANE")
+    if not pane or not os.environ.get("TMUX"):
+        raise picker.PickerError("the sidebar only runs inside tmux")
+    problem = picker.fzf_problem("the sidebar")
+    if problem:
+        raise picker.PickerError(problem)
+    from switchboard import attention
+
+    folder = tempfile.mkdtemp(prefix="switchboard-")
+    # Taken before _draw() fixes this process's theme, so that each reload finds it again.
+    env = {**os.environ, "FZF_API_KEY": os.urandom(16).hex(), FOLDER: folder}
+    try:
+        current = attention.current_session() or ""
+        groups = _draw(folder, current)
+        result = subprocess.run(
+            ["fzf", *fzf_args(folder, picker.cursor(groups, current))],
+            input=picker.rows(folder),
+            stdout=subprocess.PIPE,
+            env=env,
+            encoding="utf-8",
+            errors="replace",
+            check=False,
+        )
+    finally:
+        run.tmux(("set-option", "-p", "-u", "-t", pane, tmux.SIDEBAR))
+        shutil.rmtree(folder, ignore_errors=True)
+    if result.returncode not in (0, 1, 130):
+        raise picker.PickerError(f"fzf exited with status {result.returncode}")
+    return result.returncode
+
+
+def fzf_args(folder: str, at: int | None) -> list[str]:
+    """The picker's keys, but nothing closes it: `q` does nothing, and so does Esc outside a
+    search. Enter and a double click switch, through a binding that never accepts."""
+    switch = shlex.join([*picker.command(), "__switch"])
+    listen = shlex.join([*picker.command(), "__listen"])
+    return [
+        *picker.list_args(folder, at, KEYS, (HINT, SEARCH_HINT), "ignore"),
+        f"--listen={HOST}:0",
+        "--bind",
+        f"start:execute-silent:{listen}",
+        "--bind",
+        f"enter,double-click:transform:{switch} {{1}}",
+    ]
+
+
+def listen() -> None:
+    """fzf's start: its port and API key go on the sidebar's pane, where `refresh` finds them."""
+    pane, port, key = (
+        os.environ.get(name, "") for name in ("TMUX_PANE", "FZF_PORT", "FZF_API_KEY")
+    )
+    if pane and port:
+        run.tmux(("set-option", "-p", "-t", pane, tmux.SIDEBAR, f"{port} {key}"))
+
+
+def switch(session: str) -> str:
+    """Switches the client viewing the sidebar, which tmux finds from `$TMUX_PANE`, and gives the
+    actions that leave any search."""
+    if not session:
+        return ""
+    run.tmux(("switch-client", "-t", f"={session}"))
+    return picker.back(HINT)
+
+
+def redraw(folder: str) -> str:
+    """The lines a poke reloads, built again from tmux."""
+    if not folder:
+        return ""
+    from switchboard import attention
+
+    _draw(folder, attention.current_session() or "")
+    return picker.rows(folder)
+
+
+def poke(endpoints: Iterable[str]) -> None:
+    """Asks each sidebar's fzf to reload, without waiting for its answer. A dead one refuses the
+    connection at once."""
+    body = f"reload:{shlex.join([*picker.command(), '__redraw'])}".encode()
+    for endpoint in endpoints:
+        port, _, key = endpoint.partition(" ")
+        head = f"POST / HTTP/1.1\r\nx-api-key: {key}\r\ncontent-length: {len(body)}\r\n\r\n"
+        with (
+            contextlib.suppress(OSError, ValueError, OverflowError),
+            socket.create_connection((HOST, int(port)), timeout=TIMEOUT) as conn,
+        ):
+            conn.sendall(head.encode() + body)
+
+
+def _draw(folder: str, current: str) -> list[picker.Group]:
+    """Renders the compact list into `folder`, keeping the repos folded there folded."""
+    from switchboard import model
+
+    os.environ[theme.ENV] = theme.detect()
+    groups = picker.render(model.load(), current, compact=True)
+    try:
+        before, folded = picker.cached(folder)
+    except OSError:
+        before, folded = [], set()
+    shut = {before[index]["title"] for index in folded if index < len(before)}
+    folded = {index for index, group in enumerate(groups) if group["title"] in shut}
+    Path(folder, picker.MODEL).write_text(json.dumps(groups), encoding="utf-8")
+    Path(folder, picker.FOLDED).write_text(json.dumps(sorted(folded)), encoding="utf-8")
+    return groups

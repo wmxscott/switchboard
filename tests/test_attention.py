@@ -30,7 +30,7 @@ def sessions(stubs, *names: str, **values: str) -> None:
 
 def panes(stubs, *rows: str) -> None:
     """Each row is `session:pane:role:turn:pending`."""
-    text = "".join("{}\t0\t{}\tclaude\t{}\t{}\t{}\t0\t\n".format(*row.split(":")) for row in rows)
+    text = "".join("{}\t0\t{}\tclaude\t{}\t{}\t{}\t0\t\t\n".format(*row.split(":")) for row in rows)
     stubs.tmux.answer("list-panes", stdout=text)
 
 

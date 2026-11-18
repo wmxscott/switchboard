@@ -19,6 +19,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return cmd_picker_reload(argv)
     if argv[:1] == ["__preview"]:
         return cmd_preview(argv[1:])
+    if argv[:1] in (["__listen"], ["__redraw"], ["__switch"]):
+        return cmd_sidebar_binding(argv)
     return _main(argv)
 
 
@@ -48,6 +50,9 @@ def _main(argv: list[str]) -> int:
 
     p = sub.add_parser("refresh", help="rebuild the status bar's attention list")
     p.set_defaults(func=cmd_refresh)
+
+    p = sub.add_parser("sidebar", help="the picker's list, compact and live, in this pane")
+    p.set_defaults(func=cmd_sidebar)
 
     args = parser.parse_args(argv)
     if not args.command:
@@ -114,6 +119,31 @@ def cmd_picker_reload(argv: list[str]) -> int:
         sys.stdout.write(picker.rows(argv[1]))
     else:
         print(picker.fold(argv[1], argv[2]))
+    return 0
+
+
+def cmd_sidebar(args) -> int:
+    from switchboard import picker, sidebar
+
+    try:
+        return sidebar.show()
+    except picker.PickerError as error:
+        _err(str(error))
+        return 1
+
+
+def cmd_sidebar_binding(argv: list[str]) -> int:
+    """The sidebar's own fzf bindings: `__listen`, `__redraw` and `__switch <session>`."""
+    import os
+
+    from switchboard import sidebar
+
+    if argv[0] == "__listen":
+        sidebar.listen()
+    elif argv[0] == "__redraw":
+        sys.stdout.write(sidebar.redraw(os.environ.get(sidebar.FOLDER, "")))
+    else:
+        sys.stdout.write(sidebar.switch(argv[1] if len(argv) > 1 else ""))
     return 0
 
 

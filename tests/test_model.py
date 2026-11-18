@@ -20,7 +20,7 @@ def sessions_text(*rows: tuple[str, str, str | Path]) -> str:
 def panes_text(*rows: tuple[str, str, str, str]) -> str:
     """Each row is a session, a role, a turn and the pending keys."""
     return "".join(
-        f"{session}\t0\t%{n}\tclaude\t{role}\t{turn}\t{pending}\t0\t\n"
+        f"{session}\t0\t%{n}\tclaude\t{role}\t{turn}\t{pending}\t0\t\t\n"
         for n, (session, role, turn, pending) in enumerate(rows)
     )
 
