@@ -91,11 +91,76 @@ def test_events_codex_does_not_track_never_call_tmux(codex, event, payload):
     assert codex.calls() == []
 
 
-def test_a_subagents_prompt_submit_keeps_the_leads_prompt_and_turn(codex):
-    codex.stored("lead:working:a1,lead")
-    codex.fire("UserPromptSubmit", prompt="Explore the repo", **A1)
+def test_a_subagents_prompt_submit_keeps_the_leads_prompt_turn_and_task(codex):
+    codex.stored("lead:working:a1,lead", task="Add a --json flag")
+    codex.fire("UserPromptSubmit", **SESSION, prompt="Explore the repo", **A1)
     assert codex.after() == "lead:working:lead"
+    assert codex.task() == "Add a --json flag"
     assert codex.alerts() == []
+
+
+SESSION = {
+    "session_id": "019a3c5e-8f21-7d40-b3a9-5e2f1c7d9a04",
+    "turn_id": "019a3c5f-0b12-7e31-a8c4-6f3d2e8b1c57",
+    "transcript_path": "/Users/me/.codex/sessions/2026/11/19/rollout-019a3c5e.jsonl",
+    "cwd": "/Users/me/src/app",
+    "model": "gpt-5.5-codex",
+    "permission_mode": "default",
+}
+QUESTIONS = [
+    {
+        "id": "database",
+        "header": "Database",
+        "question": "Which database should the app use?",
+        "options": [
+            {"label": "SQLite (Recommended)", "description": "One file, no server"},
+            {"label": "Postgres", "description": "Shared with the API"},
+        ],
+    }
+]
+
+
+def tool(name: str, tool_input: object, **fields) -> dict:
+    return {**SESSION, "tool_name": name, "tool_input": tool_input, **fields}
+
+
+PATCH = "*** Begin Patch\n*** Update File: src/app.py\n@@\n-a\n+b\n*** End Patch\n"
+REASONS = [
+    ("PermissionRequest", tool("Bash", {"command": "npm test"}), "run: npm test"),
+    ("PermissionRequest", tool("apply_patch", {"command": PATCH}), "apply_patch"),
+    ("PermissionRequest", tool("mcp__github__get_issue", {"number": 7}), "mcp__github__get_issue"),
+    ("PermissionRequest", tool("Bash", {}), ""),
+    (
+        "PreToolUse",
+        tool("request_user_input", {"questions": QUESTIONS}, tool_use_id="call_7Hq2"),
+        "asks: Which database should the app use?",
+    ),
+    ("PreToolUse", tool("request_user_input", {"questions": []}), ""),
+    ("PreToolUse", tool("request_user_input", {"questions": [{"id": "db"}]}), ""),
+    ("PreToolUse", tool("request_user_input", '{"questions": [oops'), ""),
+    ("PreToolUse", {**SESSION, "tool_name": "request_user_input"}, ""),
+]
+
+
+@pytest.mark.parametrize(("event", "payload", "reason"), REASONS)
+def test_each_prompt_gives_its_reason(codex, event, payload, reason):
+    codex.stored("lead:working:")
+    codex.fire(event, **payload)
+    assert codex.after() == "lead:working:lead"
+    assert codex.reasons() == {"lead": reason}
+
+
+@pytest.mark.parametrize(
+    ("text", "task"), [("Add a --json flag\n\nto the CLI", "Add a --json flag"), (None, "")]
+)
+def test_a_prompts_first_line_is_the_task_and_the_turn_done_keeps_it(codex, text, task):
+    codex.stored("lead:done:")
+    codex.fire("UserPromptSubmit", **SESSION, prompt=text)
+    assert (codex.after(), codex.task()) == ("lead:working:", task)
+    codex.stubs.tmux.log_path.unlink()
+    codex.stored("lead:working:", task=task)
+    codex.fire("Stop", **SESSION, stop_hook_active=False, last_assistant_message="Done.")
+    assert (codex.after(), codex.task()) == ("lead:done:", task)
 
 
 def test_an_interrupt_with_a_prompt_pending_goes_idle_without_an_alert(codex):

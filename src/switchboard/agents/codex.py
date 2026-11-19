@@ -42,4 +42,6 @@ def verbs(event: str, payload: dict, state: core.State) -> list[core.Verb]:
     if event == "UserPromptSubmit" and agent != ps.LEAD_KEY:
         # A subagent got its task: no one typed anything.
         return [core.resolve(agent)]
+    if event == "PreToolUse":
+        return [core.needs(agent, claude.asks(payload))]
     return claude.verbs(event, payload, state, teams=False)

@@ -357,3 +357,5 @@ There's no advisor tool in this session, so here is the strongest case against t
 ## Log
 
 - 2026-11-18: plan written from the approved design.
+- 2026-11-19: 1.3.0 landed as #26, the base this plan builds on.
+- 2026-11-19: A1 landed as #27.

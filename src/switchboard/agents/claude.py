@@ -20,6 +20,7 @@ HANDLED = (
 )
 SESSION_KEPT = frozenset({"clear", "resume"})
 NEW_CLAUDE = frozenset({"startup", "resume"})
+FILE_VERBS = {"Edit": "edit", "MultiEdit": "edit", "Write": "write", "Read": "read"}
 
 
 def early(event: str, payload: dict) -> list[core.Verb] | None:
@@ -41,17 +42,19 @@ def verbs(event: str, payload: dict, state: core.State, teams: bool = True) -> l
     if teams and _teammate(event, agent, "" if fresh else state.role, state.pane):
         found.append(core.TEAMMATE)
     if event == "UserPromptSubmit":
-        # Only a typed prompt shows that no other agent's dialog is still open.
+        # Only a typed prompt is the user's own words, and shows that no other agent's dialog is
+        # still open.
         typed = payload.get("source", "user") == "user"
-        found += [core.WORKING, core.RESOLVE_ALL if typed else core.resolve(ps.LEAD_KEY)]
+        task = ps.first_line(payload.get("prompt")) if typed and agent == ps.LEAD_KEY else ""
+        found += [core.working(task), core.RESOLVE_ALL if typed else core.resolve(ps.LEAD_KEY)]
     elif event in ("PermissionRequest", "PreToolUse"):
-        found.append(core.needs(agent))
+        found.append(core.needs(agent, reason(payload)))
     elif event == "Notification":
         if payload.get("notification_type") == "idle_prompt":
             found += [core.IDLE] if state.turn == ps.WORKING else []
         elif not state.pending:
             # Names no agent, and repeats a PermissionRequest seconds later.
-            found.append(core.needs(agent))
+            found.append(core.needs(agent, _text(payload.get("message"))))
     elif event in TOOL_DONE:
         found.append(core.resolve(agent))
         found += [core.WORKING] if agent == ps.LEAD_KEY else []
@@ -62,6 +65,44 @@ def verbs(event: str, payload: dict, state: core.State, teams: bool = True) -> l
     elif event == "SessionEnd":
         found += [core.IDLE, core.RESOLVE_ALL]
     return found
+
+
+def reason(payload: dict) -> str:
+    """Why the tool call in a `PermissionRequest` or `PreToolUse` needs the user, the same for
+    either; "" for the plain reason."""
+    tool = _text(payload.get("tool_name"))
+    given = payload.get("tool_input")
+    given = given if isinstance(given, dict) else {}
+    if tool == "AskUserQuestion":
+        return asks(payload)
+    if tool == "ExitPlanMode":
+        return "plan ready for review"
+    if tool == "Bash":
+        command = _text(given.get("command"))
+        return f"run: {command}" if command.strip() else ""
+    path = _text(given.get("file_path"))
+    if tool and path.strip():
+        return f"{FILE_VERBS.get(tool, tool.lower())}: {_inside(path, payload.get('cwd'))}"
+    return tool
+
+
+def asks(payload: dict) -> str:
+    """`asks: ` and the first question of a call shaped like `AskUserQuestion`; "" without one."""
+    given = payload.get("tool_input")
+    questions = given.get("questions") if isinstance(given, dict) else None
+    first = questions[0] if isinstance(questions, list) and questions else None
+    question = _text(first.get("question")) if isinstance(first, dict) else ""
+    return f"asks: {question}" if question.strip() else ""
+
+
+def _text(value: object) -> str:
+    return value if isinstance(value, str) else ""
+
+
+def _inside(path: str, cwd: object) -> str:
+    """`path` relative to `cwd` when it's inside it."""
+    root = _text(cwd).rstrip("/")
+    return path.removeprefix(f"{root}/") if root else path
 
 
 def listed_as_teammate(pane: str) -> bool:

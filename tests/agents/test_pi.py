@@ -24,7 +24,6 @@ MAPPING = [
     ("agent_start", {}, "lead:done:", "lead:working:"),
     ("agent_start", {}, "lead:working:", None),
     ("ui_prompt_start", {"kind": "confirm"}, "lead:working:", "lead:working:ui"),
-    ("ui_prompt_start", {"kind": "custom"}, "lead:working:ui", None),
     ("ui_prompt_end", {}, "lead:working:p1,ui", "lead:working:p1"),
     ("plannotator_opened", {"id": "p1"}, "lead:working:ui", "lead:working:p1,ui"),
     ("plannotator_closed", {"id": "p1"}, "lead:idle:p1,ui", "lead:idle:ui"),
@@ -40,6 +39,63 @@ def test_event_mapping(pi, event, payload, before, expected):
     pi.fire(event, **payload)
     assert pi.after() == expected
     assert pi.calls()[0] == pi.read
+
+
+REASONS = [
+    ("ui_prompt_start", {"kind": "confirm", "title": "Delete 3 files?"}, "ui", "Delete 3 files?"),
+    ("ui_prompt_start", {"kind": "select", "title": "Pick a model\nfor now"}, "ui", "Pick a model"),
+    ("ui_prompt_start", {"kind": "select"}, "ui", "select"),
+    ("ui_prompt_start", {"kind": "input", "title": " "}, "ui", "input"),
+    ("ui_prompt_start", {"kind": "editor", "title": 5}, "ui", "editor"),
+    ("ui_prompt_start", {"kind": ["custom"]}, "ui", ""),
+    ("ui_prompt_start", {}, "ui", ""),
+    ("plannotator_opened", {"id": "p1"}, "p1", "plan ready for review"),
+]
+
+
+@pytest.mark.parametrize(("event", "payload", "key", "reason"), REASONS)
+def test_each_prompt_gives_its_reason(pi, event, payload, key, reason):
+    pi.stored("lead:working:")
+    pi.fire(event, **payload)
+    assert pi.after() == f"lead:working:{key}"
+    assert pi.reasons() == {key: reason}
+
+
+def test_a_nested_dialog_with_the_same_reason_writes_nothing(pi):
+    pi.stored("lead:working:ui", reasons={"ui": "custom"})
+    pi.fire("ui_prompt_start", kind="custom")
+    assert pi.calls() == [pi.read]
+
+
+@pytest.mark.parametrize(
+    ("before", "expected"),
+    [
+        ("lead:idle:", "lead:idle:"),
+        ("lead:working:ui", "lead:working:ui"),
+        ("lead:done:", "lead:done:"),
+        ("::", "lead:idle:"),
+    ],
+)
+def test_input_sets_the_task_and_leaves_the_turn_to_the_run(pi, before, expected):
+    """An extension can handle the input itself, and then no run starts."""
+    pi.stored(before, task="Earlier task")
+    pi.fire("input", text="Refactor the parser\nand add tests")
+    assert pi.after() == expected
+    assert pi.task() == "Refactor the parser"
+    assert panestate.CARD_AT not in pi.written()
+
+
+@pytest.mark.parametrize("payload", [{}, {"text": None}, {"text": ["fix it"]}, {"text": " \n"}])
+def test_input_with_no_text_changes_nothing(pi, payload):
+    pi.stored("lead:idle:")
+    pi.fire("input", **payload)
+    assert pi.calls() == [pi.read]
+
+
+def test_a_settled_run_keeps_its_task(pi):
+    pi.stored("lead:working:", task="Refactor the parser")
+    pi.fire("agent_settled", aborted=False)
+    assert (pi.after(), pi.task()) == ("lead:done:", "Refactor the parser")
 
 
 def test_a_settled_run_in_a_session_a_client_is_viewing_goes_idle(pi):
@@ -89,7 +145,12 @@ def test_needs_you_and_a_settled_run_alert_but_an_abort_does_not(pi, event, payl
 
 @pytest.mark.parametrize(
     ("event", "payload"),
-    [("agent_start", {}), ("ui_prompt_start", {}), ("session_shutdown", {"reason": "quit"})],
+    [
+        ("agent_start", {}),
+        ("ui_prompt_start", {}),
+        ("input", {"text": "Refactor the parser"}),
+        ("session_shutdown", {"reason": "quit"}),
+    ],
 )
 def test_events_from_outside_the_pane_are_dropped(pi, ps, event, payload):
     pi.stored("lead:idle:", inside=False)
