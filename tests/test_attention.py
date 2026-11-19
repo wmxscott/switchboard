@@ -16,6 +16,12 @@ from switchboard.panestate import DONE, IDLE, NEEDS, WORKING
 SCRIPT = os.path.join(os.path.dirname(sys.executable), "switchboard")
 R, G, H = "#[fg=themered]", "#[fg=themegreen]", "#[fg=themelightgrey]"
 END = "#[default] "
+UNLESS_SIDEBAR = "#{?#{P:#{@switchboard-sidebar}},,"
+
+
+def stored(segment: str) -> str:
+    """`segment` as `@attention` holds it: shown only where the window has no sidebar."""
+    return f"{UNLESS_SIDEBAR}{segment}}}" if segment else ""
 
 
 def plain(value: str) -> str:
@@ -177,6 +183,22 @@ def test_a_hash_in_a_name_is_escaped():
     assert attention.render({"fix#[1]": [NEEDS, DONE]}, "x") == f"{R}▲{G}✓{R} fix##[1]{END}"
 
 
+def test_the_segment_shows_only_where_the_window_has_no_sidebar():
+    assert attention.unless_sidebar(f"{R}▲ b{END}") == (
+        "#{?#{P:#{@switchboard-sidebar}},,#[fg=themered]▲ b#[default] }"
+    )
+
+
+def test_nothing_to_show_stays_empty_unwrapped():
+    assert attention.unless_sidebar("") == ""
+
+
+def test_a_comma_or_brace_in_a_name_is_escaped_inside_the_conditional():
+    segment = attention.render({"a,b}#[c]": [NEEDS]}, "x")
+    assert segment == f"{R}▲ a,b}}##[c]{END}"
+    assert attention.unless_sidebar(segment) == f"{UNLESS_SIDEBAR}{R}▲ a#,b#}}##[c]{END}}}"
+
+
 def test_refresh_writes_each_sessions_own_value_in_one_call(stubs):
     sessions(stubs, "build", "docs", "main", "scratch")
     panes(
@@ -189,10 +211,10 @@ def test_refresh_writes_each_sessions_own_value_in_one_call(stubs):
     )
     attention.refresh()
     assert written(stubs) == {
-        "build": f"{G}✓ docs{END}",
-        "docs": f"{R}▲² build{END}",
-        "main": f"{R}▲² build  {G}✓ docs{END}",
-        "scratch": f"{R}▲² build  {G}✓ docs{END}",
+        "build": stored(f"{G}✓ docs{END}"),
+        "docs": stored(f"{R}▲² build{END}"),
+        "main": stored(f"{R}▲² build  {G}✓ docs{END}"),
+        "scratch": stored(f"{R}▲² build  {G}✓ docs{END}"),
     }
     assert [call[0] for call in stubs.tmux.calls()] == ["list-sessions", "list-panes", "set-option"]
 
@@ -209,11 +231,12 @@ def test_refresh_counts_agents_by_their_displayed_state(stubs):
         "here:%6:lead:idle:",
     )
     attention.refresh()
-    assert written(stubs) == {"here": f"{R}▲²{G}✓²{R} work{END}"}
+    assert written(stubs) == {"here": stored(f"{R}▲²{G}✓²{R} work{END}")}
 
 
 def test_refresh_writes_only_what_changed(stubs):
-    sessions(stubs, "a", "b", "c", a=f"{G}✓ b{END}", b=f"{R}▲ gone{END}", c=f"{G}✓ b{END}")
+    kept, gone = stored(f"{G}✓ b{END}"), stored(f"{R}▲ gone{END}")
+    sessions(stubs, "a", "b", "c", a=kept, b=gone, c=kept)
     panes(stubs, "b:%1:lead:done:")
     attention.refresh()
     assert written(stubs) == {"b": ""}
@@ -227,7 +250,7 @@ def test_refresh_writes_only_what_changed(stubs):
     ],
 )
 def test_refresh_writes_nothing_when_nothing_changed(stubs, value, rows):
-    sessions(stubs, "a", "b", a=value)
+    sessions(stubs, "a", "b", a=stored(value))
     panes(stubs, *rows)
     attention.refresh()
     assert written(stubs) is None
@@ -271,7 +294,10 @@ def test_seen_turns_done_idle_but_leaves_needs_you(stubs):
     for values in options.values():
         assert set(values) == {"@switchboard-turn", "@switchboard-at"}
         assert abs(int(values["@switchboard-at"]) - time.time()) < 60
-    assert written(stubs) == {"work": f"{G}✓ other{END}", "other": f"{R}▲² work{END}"}
+    assert written(stubs) == {
+        "work": stored(f"{G}✓ other{END}"),
+        "other": stored(f"{R}▲² work{END}"),
+    }
 
 
 def test_seen_with_nothing_done_only_refreshes(stubs):
@@ -279,7 +305,7 @@ def test_seen_with_nothing_done_only_refreshes(stubs):
     panes(stubs, "work:%1:lead:idle:", "other:%2:lead:done:")
     attention.seen("work")
     assert seen_writes(stubs) == {}
-    assert written(stubs) == {"work": f"{G}✓ other{END}"}
+    assert written(stubs) == {"work": stored(f"{G}✓ other{END}")}
 
 
 def test_seen_takes_the_session_as_an_argument(stubs):

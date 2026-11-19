@@ -22,7 +22,12 @@ READ = [
     *("display-message", "-p", "-t", PANE),
     "#{session_name}\t#{@switchboard-role}\t#{@switchboard-turn}\t#{@switchboard-pending}"
     "\t#{@switchboard-reasons}\t#{@switchboard-task}",
-    *(";", "list-clients", "-F", "#{client_name}\t#{client_session}"),
+    *(
+        ";",
+        "list-clients",
+        "-F",
+        "#{client_name}\t#{?#{P:#{@switchboard-sidebar}},1,}\t#{client_session}",
+    ),
 ]
 SCRIPT = os.path.join(os.path.dirname(sys.executable), "switchboard")
 A1 = {"agent_id": "a1"}
@@ -34,14 +39,16 @@ def stored(
     viewed: bool = False,
     reasons: dict[str, str] | None = None,
     task: str = "",
+    sidebars: tuple[str, ...] = (),
 ) -> None:
     """What the stub tmux answers the hook's read with: the pane is in `work`, holding `reasons`
-    and `task`, and two clients are elsewhere, or one of them is on `work` when `viewed`."""
+    and `task`, and two clients are elsewhere, or one of them is on `work` when `viewed`. The
+    clients in `sidebars` view a window with a sidebar."""
     why = panestate.encode_reasons(reasons or {})
+    clients = (("/dev/ttys001", "work" if viewed else "elsewhere"), ("/dev/ttys002", "other"))
     lines = [
         "work\t" + state.replace(":", "\t") + f"\t{why}\t{panestate.encode_task(task)}",
-        "/dev/ttys001\t" + ("work" if viewed else "elsewhere"),
-        "/dev/ttys002\tother",
+        *(f"{name}\t{'1' if name in sidebars else ''}\t{where}" for name, where in clients),
     ]
     stubs.tmux.answer("display-message", stdout="\n".join(lines) + "\n")
 
@@ -628,6 +635,22 @@ def test_a_change_to_needs_you_alerts_every_client_once_then_refreshes(stubs, pl
     ]
 
 
+def test_a_client_whose_window_has_a_sidebar_gets_no_message_but_the_sound_plays(stubs, played):
+    stored(stubs, "lead:working:", sidebars=("/dev/ttys001",))
+    fire("PermissionRequest")
+    assert alerts(stubs) == [("/dev/ttys002", "▲ work needs you")]
+    assert played == [True]
+
+
+def test_the_sound_plays_when_every_clients_window_has_a_sidebar(stubs, played):
+    stored(stubs, "lead:working:", sidebars=("/dev/ttys001", "/dev/ttys002"))
+    fire("Stop")
+    assert after(stubs) == "lead:done:"
+    assert alerts(stubs) == []
+    assert played == [True]
+    assert stubs.tmux.calls()[-1][0] == "list-sessions"
+
+
 def test_no_alert_for_a_session_a_client_is_viewing(stubs, played):
     stored(stubs, "lead:working:", viewed=True)
     fire("PermissionRequest")
@@ -736,9 +759,8 @@ def test_the_refresh_after_a_change_updates_other_sessions(stubs, played):
     )
     fire("PermissionRequest")
     writes = [call for call in stubs.tmux.calls() if "@attention" in call]
-    assert writes == [
-        ["set-option", "-t", "=other:", "@attention", "#[fg=themered]▲ work#[default] "]
-    ]
+    value = "#{?#{P:#{@switchboard-sidebar}},,#[fg=themered]▲ work#[default] }"
+    assert writes == [["set-option", "-t", "=other:", "@attention", value]]
 
 
 def test_the_hook_does_not_wait_for_the_sound(stubs, tmp_path):

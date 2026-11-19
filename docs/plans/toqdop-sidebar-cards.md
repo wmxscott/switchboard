@@ -377,3 +377,5 @@ There's no advisor tool in this session, so here is the strongest case against t
 - 2026-11-19: P1 landed as ai-toolkit#37 (Stack P done; installed with `pi update`).
 - 2026-11-19: A3 landed as #29, its `--read0` half.
 - 2026-11-19: plan amended: S16 replaces S6 and the bottom-up layout. A3's prototype showed fzf's gutter drawn down a gap item, and that one list can't pin a stack under a long list. The user chose to keep the list exactly as today, with the gap only when there are cards. A3's second half moved into A4.
+- 2026-11-19: A4 landed as #31.
+- 2026-11-19: A5 landed as #32.

@@ -19,7 +19,12 @@ READ = [
     *("display-message", "-p", "-t", PANE),
     "#{session_name}\t#{@switchboard-role}\t#{@switchboard-turn}\t#{@switchboard-pending}"
     "\t#{@switchboard-reasons}\t#{@switchboard-task}\t#{pane_pid}",
-    *(";", "list-clients", "-F", "#{client_name}\t#{client_session}"),
+    *(
+        ";",
+        "list-clients",
+        "-F",
+        "#{client_name}\t#{?#{P:#{@switchboard-sidebar}},1,}\t#{client_session}",
+    ),
 ]
 
 
@@ -55,8 +60,8 @@ class Driver:
         why = panestate.encode_reasons(reasons or {})
         lines = [
             "work\t" + state.replace(":", "\t") + f"\t{why}\t{panestate.encode_task(task)}\t{pid}",
-            "/dev/ttys001\t" + ("work" if viewed else "elsewhere"),
-            "/dev/ttys002\tother",
+            "/dev/ttys001\t\t" + ("work" if viewed else "elsewhere"),
+            "/dev/ttys002\t\tother",
         ]
         self.stubs.tmux.answer("display-message", stdout="\n".join(lines) + "\n")
 

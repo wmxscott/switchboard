@@ -1,7 +1,8 @@
 """`@attention`: each session's status bar names the other sessions that need the user or are done.
 
-The value is a tmux format that `status-right` shows with `#{E:@attention}`. Writing it also asks
-each open sidebar to redraw.
+The value is a tmux format that `status-right` shows with `#{E:@attention}`. It shows nothing in a
+window with a sidebar, whose cards stand in for it. Writing it also asks each open sidebar to
+redraw.
 """
 
 from __future__ import annotations
@@ -66,7 +67,7 @@ def current_session() -> str | None:
 
 
 def render(states: Mapping[str, Iterable[str]], own: str) -> str:
-    """`own`'s value: the other sessions that need the user, then those that are done.
+    """`own`'s segment: the other sessions that need the user, then those that are done.
 
     `states` holds the displayed state of each session's agents. A session sits in the group of
     its most urgent agent and shows a mark for each shown state, with a superscript count of the
@@ -88,12 +89,21 @@ def render(states: Mapping[str, Iterable[str]], own: str) -> str:
     return f"{GAP.join(_style(entry) for entry in entries)}#[default] "
 
 
+def unless_sidebar(segment: str) -> str:
+    """`segment`, shown only where the client's window has no sidebar. Inside the conditional, a
+    bare `,` or `}` would end it."""
+    if not segment:
+        return ""
+    escaped = segment.replace(",", "#,").replace("}", "#}")
+    return f"#{{?{ps.SIDEBAR_OPEN},,{escaped}}}"
+
+
 def _write(sessions: Sequence[Session], panes: Sequence[Pane]) -> None:
     agents = tmux.agents_by_session(panes)
     states = {s.name: [a.state for a in agents.get(s.name, ())] for s in sessions}
     commands = []
     for session in sessions:
-        value = render(states, session.name)
+        value = unless_sidebar(render(states, session.name))
         if value != session.attention:
             commands.append(("set-option", "-t", f"={session.name}:", tmux.ATTENTION, value))
     run.tmux(*commands)

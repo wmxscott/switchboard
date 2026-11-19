@@ -7,6 +7,8 @@ this module, so it imports nothing heavy; the hook has loaded `json` already.
 `@switchboard-task` the line of the prompt that started the turn, both as JSON so that no text
 can end a tmux command with `;` or split the tab-separated read. `@switchboard-card-at` holds the
 Unix seconds of the agent's latest prompt, or of its turn ending done.
+
+`@switchboard-sidebar` marks a sidebar's pane (see `switchboard.sidebar`).
 """
 
 from __future__ import annotations
@@ -23,6 +25,10 @@ REASONS = "@switchboard-reasons"
 TASK = "@switchboard-task"
 CARD_AT = "@switchboard-card-at"
 OPTIONS = (ROLE, TURN, PENDING, AT, AGENT, REASONS, TASK, CARD_AT)
+
+SIDEBAR = "@switchboard-sidebar"
+# A tmux format, not empty when the window it's expanded for has a sidebar.
+SIDEBAR_OPEN = f"#{{P:#{{{SIDEBAR}}}}}"
 
 CLAUDE = "claude"
 

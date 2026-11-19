@@ -17,14 +17,18 @@ from switchboard import run
 STORED = (ps.ROLE, ps.TURN, ps.PENDING, ps.REASONS, ps.TASK)
 PANE_FORMAT = "\t".join(f"#{{{name}}}" for name in ("session_name", *STORED))
 PID_FORMAT = f"{PANE_FORMAT}\t#{{pane_pid}}"
-CLIENTS = ("list-clients", "-F", "#{client_name}\t#{client_session}")
+CLIENTS = (
+    "list-clients",
+    "-F",
+    f"#{{client_name}}\t#{{?{ps.SIDEBAR_OPEN},1,}}\t#{{client_session}}",
+)
 ALL = "*"
 
 Verb = namedtuple("Verb", ("name", "key", "text"), defaults=("", ""))
 State = namedtuple("State", ("pane", "role", "turn", "pending"))
 View = namedtuple("View", ("session", "stored", "clients", "pid"), defaults=("",))
+Client = namedtuple("Client", ("name", "session", "sidebar"))
 Stored = tuple[str, str, str, str, str]
-Client = tuple[str, str]
 
 START = Verb("start")
 WORKING = Verb("working")
@@ -113,7 +117,7 @@ def settle(pane: str, view: View, verbs: list[Verb], agent: str) -> None:
         if placed(view, agent):
             end(pane)
         return
-    viewed = any(where == view.session for _, where in view.clients)
+    viewed = any(client.session == view.session for client in view.clients)
     state = apply(view.stored, verbs, viewed)
     if state != view.stored and placed(view, agent):
         write(pane, state, agent, raised(view.stored, state))
@@ -193,14 +197,15 @@ def changed(session: str, before: Stored, after: Stored, clients: list[Client]) 
     from switchboard import alert, attention
 
     news = alert.news(before, after)
-    if news and all(where != session for _, where in clients):
-        alert.send(news, session, [name for name, _ in clients])
+    if news and all(client.session != session for client in clients):
+        sidebars = {client.name for client in clients if client.sidebar}
+        alert.send(news, session, [client.name for client in clients], sidebars)
     attention.refresh()
 
 
 def read(pane: str, agent: str = ps.CLAUDE) -> View | None:
-    """The pane's session, its stored state, each client's name and session, and for any agent
-    but Claude, the pane's process id."""
+    """The pane's session, its stored state, each client's name and session and whether its
+    window has a sidebar, and for any agent but Claude, the pane's process id."""
     guarded = agent != ps.CLAUDE
     fmt = PID_FORMAT if guarded else PANE_FORMAT
     out = run.tmux(("display-message", "-p", "-t", pane, fmt), CLIENTS)
@@ -211,7 +216,8 @@ def read(pane: str, agent: str = ps.CLAUDE) -> View | None:
     if len(fields) != 1 + len(STORED) + guarded:
         return None
     session, role, turn, pending, reasons, task, *pid = fields
-    clients = [(name, where) for name, tab, where in (s.partition("\t") for s in lines) if tab]
+    rows = (line.split("\t", 2) for line in lines)
+    clients = [Client(row[0], row[2], bool(row[1])) for row in rows if len(row) == 3]
     return View(session, (role, turn, pending, reasons, task), clients, *pid)
 
 
