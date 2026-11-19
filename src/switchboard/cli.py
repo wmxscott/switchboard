@@ -18,7 +18,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         return cmd_hook(argv[1:])
     if argv[:1] == ["state"]:
         return cmd_state(argv[1:])
-    if argv[:1] in (["__rows"], ["__fold"]):
+    if argv[:1] in (["__rows"], ["__fold"], ["__rows0"], ["__fold0"]):
         return cmd_picker_reload(argv)
     if argv[:1] == ["__preview"]:
         return cmd_preview(argv[1:])
@@ -122,13 +122,15 @@ def cmd_pick(args) -> int:
 
 
 def cmd_picker_reload(argv: list[str]) -> int:
-    """The picker's own fzf bindings: `__rows <folder>` and `__fold <folder> <group>`."""
+    """The picker's own fzf bindings: `__rows <folder>` and `__fold <folder> <group>`, and the
+    sidebar's `__rows0` and `__fold0`, whose lines end with a NUL."""
     from switchboard import picker
 
-    if argv[0] == "__rows":
-        sys.stdout.write(picker.rows(argv[1]))
+    read0 = argv[0].endswith("0")
+    if argv[0].startswith("__rows"):
+        sys.stdout.write(picker.rows(argv[1], "\0" if read0 else "\n"))
     else:
-        print(picker.fold(argv[1], argv[2]))
+        print(picker.fold(argv[1], argv[2], read0))
     return 0
 
 
