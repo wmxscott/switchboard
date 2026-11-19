@@ -19,11 +19,11 @@ SOUNDS = (
 DELAY = "4000"
 TEXT = {ps.NEEDS: "▲ {} needs you", ps.DONE: "✓ {} is done"}
 
-State = tuple[str, str, str]
+State = tuple[str, ...]
 
 
 def news(before: State, after: State) -> str | None:
-    """The displayed state a change between two (role, turn, pending) states alerts about.
+    """The displayed state a change between two (role, turn, pending, ...) states alerts about.
 
     Needs-you for any agent; done only for a lead, since teammates go idle between messages.
     """
@@ -67,5 +67,5 @@ def play() -> subprocess.Popen | None:
 
 
 def _shown(state: State) -> str:
-    _, turn, pending = state
+    _, turn, pending, *_ = state
     return ps.display(turn, ps.decode_pending(pending))

@@ -49,6 +49,9 @@ class Pane:
     pending: tuple[str, ...] = ()
     at: int = 0
     agent: str = ""
+    reasons: tuple[tuple[str, str], ...] = ()
+    task: str = ""
+    card_at: int = 0
     sidebar: str = ""
     index: int = 0
 
@@ -78,10 +81,12 @@ def parse_sessions(text: str) -> list[Session]:
 
 def parse_panes(text: str) -> list[Pane]:
     found = []
-    for name, win, index, pid, cmd, role, turn, keys, at, *rest in _rows(text, len(PANE_FIELDS)):
+    for row in _rows(text, len(PANE_FIELDS)):
+        name, win, index, pid, cmd, role, turn, keys, at, agent, why, task, card, sidebar = row
         pending = panestate.decode_pending(keys)
-        pane = Pane(name, _int(win), pid, cmd, role, turn, pending, _int(at), *rest, _int(index))
-        found.append(pane)
+        reasons = tuple(panestate.decode_reasons(why).items())
+        stored = (role, turn, pending, _int(at), agent, reasons, panestate.decode_task(task))
+        found.append(Pane(name, _int(win), pid, cmd, *stored, _int(card), sidebar, _int(index)))
     return found
 
 

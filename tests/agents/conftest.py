@@ -18,7 +18,7 @@ INSIDE, OUTSIDE = 400, 999
 READ = [
     *("display-message", "-p", "-t", PANE),
     "#{session_name}\t#{@switchboard-role}\t#{@switchboard-turn}\t#{@switchboard-pending}"
-    "\t#{pane_pid}",
+    "\t#{@switchboard-reasons}\t#{@switchboard-task}\t#{pane_pid}",
     *(";", "list-clients", "-F", "#{client_name}\t#{client_session}"),
 ]
 
@@ -45,7 +45,7 @@ class Driver:
         """The pane is in `work`, and two clients are elsewhere, or one is on `work`."""
         pid = INSIDE if inside else OUTSIDE
         lines = [
-            "work\t" + state.replace(":", "\t") + f"\t{pid}",
+            "work\t" + state.replace(":", "\t") + f"\t\t\t{pid}",
             "/dev/ttys001\t" + ("work" if viewed else "elsewhere"),
             "/dev/ttys002\tother",
         ]

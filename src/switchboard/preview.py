@@ -21,7 +21,11 @@ FIELDS = (
     "pane_id",
     "pane_active",
     "pane_current_command",
-    *ps.OPTIONS,
+    ps.ROLE,
+    ps.TURN,
+    ps.PENDING,
+    ps.AT,
+    ps.AGENT,
     "window_name",
 )
 
