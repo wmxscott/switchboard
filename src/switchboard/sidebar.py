@@ -1,6 +1,6 @@
-"""The sidebar: the picker's list, compact and long-lived, in a pane of its own. Enter switches the
-client viewing it, and the sidebar stays. Its lines end with a NUL (`--read0`), so that one item
-can span lines.
+"""The sidebar: the picker's list, compact and long-lived, in a pane of its own, with a card under
+it for each agent elsewhere that needs the user or is done. Enter switches the client viewing it,
+and the sidebar stays. Its items end with a NUL (`--read0`), so that a card can span two lines.
 
 Its fzf listens on a local port, which it records with its API key in its pane's
 `@switchboard-sidebar`. `refresh` finds them there, in the pane read it already makes, and asks
@@ -12,6 +12,7 @@ in `@switchboard-layout`, to put back when it closes the sidebar.
 from __future__ import annotations
 
 import contextlib
+import dataclasses
 import json
 import os
 import shlex
@@ -22,15 +23,18 @@ import tempfile
 from collections.abc import Iterable
 from pathlib import Path
 
-from switchboard import picker, run, theme, tmux
+from switchboard import cards, picker, run, theme, tmux
 
 FOLDER = "SWITCHBOARD_SIDEBAR"
-KEYS = "j:down,k:up,q:ignore"
+STEP = f"[ {{3}} = {cards.GAP} ] && echo"
+KEYS = f"j,down:down+transform({STEP} down),k,up:up+transform({STEP} up),q:ignore"
 HOST = "127.0.0.1"
 TIMEOUT = 0.2
 COLUMNS = 32
 STARTING = "starting"
 LAYOUT = "@switchboard-layout"
+CARDS = "cards.json"
+EDGE = 3  # fzf's pointer and marker columns, and the one it keeps for a scrollbar
 
 
 def show() -> int:
@@ -50,7 +54,7 @@ def show() -> int:
         groups = _draw(folder, current)
         result = subprocess.run(
             ["fzf", *fzf_args(folder, picker.cursor(groups, current))],
-            input=picker.rows(folder, "\0"),
+            input=rows(folder),
             stdout=subprocess.PIPE,
             env=env,
             encoding="utf-8",
@@ -127,14 +131,18 @@ def _panes(cell: dict) -> Iterable[dict]:
 
 def fzf_args(folder: str, at: int | None) -> list[str]:
     """The picker's keys without its hints, and nothing closes it: `q` does nothing, and so does
-    Esc outside a search. Enter and a double click switch, through a binding that never accepts."""
+    Esc outside a search. Enter and a double click switch, through a binding that never accepts.
+    `j` and `k` step over the gap above any cards, and a resize fits the gap again."""
     switch = shlex.join([*picker.command(), "__switch"])
     listen = shlex.join([*picker.command(), "__listen"])
+    again = shlex.join([*picker.command(), "__rows0", folder])
     return [
         *picker.list_args(folder, at, KEYS, ("", ""), "ignore", read0=True),
         f"--listen={HOST}:0",
         "--bind",
         f"start:execute-silent:{listen}",
+        "--bind",
+        f"resize:reload:{again}",
         "--bind",
         f"enter,double-click:transform:{switch} {{1}} {{2}}",
     ]
@@ -159,13 +167,41 @@ def switch(session: str, pane: str) -> str:
 
 
 def redraw(folder: str) -> str:
-    """The lines a poke reloads, built again from tmux."""
+    """The items a poke reloads, built again from tmux."""
     if not folder:
         return ""
     from switchboard import attention
 
     _draw(folder, attention.current_session() or "")
-    return picker.rows(folder, "\0")
+    return rows(folder)
+
+
+def rows(folder: str) -> str:
+    """The list cached in `folder`, then any cards, fitted to fzf's rows and columns."""
+    groups, folded = picker.cached(folder)
+    listed = list(picker.lines(groups, folded))
+    height, columns = _size()
+    stack = cards.stack(_cards(folder), height - len(listed), columns - EDGE)
+    return "".join(f"{item}\0" for item in (*listed, *stack))
+
+
+def _size() -> tuple[int, int]:
+    """fzf's rows and columns: its own in a reload, else the terminal's that it's about to fill."""
+    lines, columns = (os.environ.get(name, "") for name in ("FZF_LINES", "FZF_COLUMNS"))
+    if lines.isdecimal() and columns.isdecimal():
+        return int(lines), int(columns)
+    size = shutil.get_terminal_size((COLUMNS, 0))
+    return size.lines, size.columns
+
+
+def _cards(folder: str) -> list[cards.Card]:
+    """The cards cached in `folder`, drawn in the theme the list was."""
+    try:
+        saved = json.loads(Path(folder, CARDS).read_text(encoding="utf-8"))
+    except OSError:
+        return []
+    os.environ[theme.ENV] = saved["theme"]
+    return [cards.Card(**card) for card in saved["cards"]]
 
 
 def poke(endpoints: Iterable[str]) -> None:
@@ -183,11 +219,13 @@ def poke(endpoints: Iterable[str]) -> None:
 
 
 def _draw(folder: str, current: str) -> list[picker.Group]:
-    """Renders the compact list into `folder`, keeping the repos folded there folded."""
+    """Renders the compact list into `folder`, keeping the repos folded there folded, with the
+    cards for every session but `current`."""
     from switchboard import model
 
     os.environ[theme.ENV] = theme.detect()
-    groups = picker.render(model.load(), current, compact=True)
+    found = model.load()
+    groups = picker.render(found, current, compact=True)
     try:
         before, folded = picker.cached(folder)
     except OSError:
@@ -196,4 +234,8 @@ def _draw(folder: str, current: str) -> list[picker.Group]:
     folded = {index for index, group in enumerate(groups) if group["title"] in shut}
     Path(folder, picker.MODEL).write_text(json.dumps(groups), encoding="utf-8")
     Path(folder, picker.FOLDED).write_text(json.dumps(sorted(folded)), encoding="utf-8")
+    every = [*(row for repo in found.repos for row in repo.rows), *found.other]
+    shown = cards.build((agent for row in every for agent in row.agents), current)
+    saved = {"theme": os.environ[theme.ENV], "cards": [dataclasses.asdict(c) for c in shown]}
+    Path(folder, CARDS).write_text(json.dumps(saved), encoding="utf-8")
     return groups

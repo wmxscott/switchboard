@@ -17,7 +17,7 @@ from pathlib import Path
 
 import pytest
 
-from switchboard import attention, cli, model, picker, sidebar
+from switchboard import attention, cards, cli, model, picker, sidebar
 from switchboard.git import Status, Worktree
 from switchboard.model import Model, Repo, Row
 from switchboard.projects import Label
@@ -107,6 +107,20 @@ COMPACT = [
     ("scratch", "%9", "2", f"│   scratch  {DOT}"),
     ("home", "", "2", "│   home"),
 ]
+WIDTH = 29  # 32 columns, less fzf's pointer, marker and scrollbar
+GADGET = ("gadget", "%3", "", "✓ gadget · claude\n  done")
+W_MAIN = ("w/main", "%1", "", "▲ w/main · claude\n  needs you")
+
+
+def gap(blank: int) -> tuple[str, ...]:
+    return ("", "", cards.GAP, "\n" * blank + "─" * WIDTH)
+
+
+@pytest.fixture
+def sized(monkeypatch):
+    """fzf's size, as it gives it to a reload."""
+    monkeypatch.setenv("FZF_LINES", "20")
+    monkeypatch.setenv("FZF_COLUMNS", "32")
 
 
 def bindings(args: list[str]) -> dict[str, str]:
@@ -190,9 +204,12 @@ def test_a_long_title_is_cut_short_to_keep_a_folded_repo_s_dot():
 
 @pytest.fixture
 def inside(stubs, monkeypatch, tmp_path):
-    """Inside tmux in pane %5 of `w/main`, with fzf 0.59 and the fixture model."""
+    """Inside tmux in pane %5 of `w/main`, 30 rows of 32 columns, with fzf 0.59 and the fixture
+    model."""
     monkeypatch.setenv("TMUX", "/tmp/stub,1,0")
     monkeypatch.setenv("TMUX_PANE", PANE)
+    monkeypatch.setenv("LINES", "30")
+    monkeypatch.setenv("COLUMNS", "32")
     monkeypatch.setattr(model, "load", fixture)
     monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
     stubs.tmux.answer("display-message", stdout="w/main\n")
@@ -218,7 +235,7 @@ def test_keys_and_look(inside):
     assert "--listen=127.0.0.1:0" in args
     assert not [arg for arg in args if arg.startswith(("--preview", "--color"))]
     keys = bindings(args)
-    assert args[args.index("j:down,k:up,q:ignore") - 1] == "--bind"
+    assert args[args.index(sidebar.KEYS) - 1] == "--bind"
     assert keys["/"] == "show-input+clear-query+unbind(j,k,/,q)"
     assert keys["load"] == "pos(4)+unbind(load)"
     assert shlex.split(keys["start"].removeprefix("execute-silent:")) == [*SELF, "__listen"]
@@ -227,7 +244,72 @@ def test_keys_and_look(inside):
     tab = shlex.split(keys["tab"].removeprefix("transform:"))
     assert tab[:4] == [*SELF, "__fold0"]
     assert tab[5] == "{3}"
-    assert fields(items(call["stdin"])) == COMPACT
+    assert shlex.split(keys["resize"].removeprefix("reload:")) == [*SELF, "__rows0", tab[4]]
+    assert fields(items(call["stdin"])) == [*COMPACT, gap(30 - 9 - 3), GADGET]
+
+
+@pytest.mark.parametrize(("keys", "move"), [("j,down", "down"), ("k,up", "up")])
+def test_j_and_k_step_over_the_gap(keys, move):
+    """fzf's side: the move, then a transform on the item it lands on."""
+    found = {key: (action, step) for key, action, step in STEPS.findall(sidebar.KEYS)}
+    action, step = found[keys]
+    assert action == move
+    assert sh(step.replace("{3}", shlex.quote(cards.GAP))) == f"{move}\n"
+    for group in ("1", ""):
+        assert sh(step.replace("{3}", shlex.quote(group))) == ""
+    assert sidebar.KEYS.endswith(",q:ignore")
+
+
+STEPS = re.compile(r"(?:^|,)([a-z][a-z,]*):([a-z]+)\+transform\(([^)]*)\)")
+
+
+def test_with_no_cards_the_sidebar_is_the_list_alone(inside, monkeypatch):
+    """No agent outside the sidebar's own session needs the user or is done."""
+    stubs = inside
+    stubs.fzf.reply(code=130)
+    calm = Model((widget(),), fixture().other)
+    monkeypatch.setattr(model, "load", lambda: calm)
+    cli.main(["sidebar"])
+    listed = list(picker.lines(picker.render(calm, "w/main", compact=True)))
+    assert items(opened(stubs)["stdin"]) == listed
+
+
+def test_enter_on_a_card_lands_on_its_agents_pane(stubs, monkeypatch, sized, tmp_path):
+    monkeypatch.setattr(model, "load", fixture)
+    monkeypatch.setenv("TMUX_PANE", PANE)
+    stubs.tmux.answer("display-message", stdout="w/main\n")
+    *_, card = fields(items(sidebar.redraw(str(tmp_path))))
+    assert card == GADGET
+    assert enter(*card[:2]) == BACK
+    assert stubs.tmux.calls()[-1] == ["switch-client", "-t", "%3"]
+
+
+@pytest.mark.parametrize("group", ["", cards.GAP])
+def test_tab_on_a_card_or_the_gap_folds_nothing(tmp_path, group):
+    (tmp_path / picker.MODEL).write_text(json.dumps(picker.render(fixture(), "", compact=True)))
+    tab = bindings(sidebar.fzf_args(str(tmp_path), None))["tab"].removeprefix("transform:")
+    assert sh(tab.replace("{3}", shlex.quote(group))).strip() == ""
+    assert not (tmp_path / picker.FOLDED).exists()
+
+
+def test_a_fold_or_a_resize_fits_the_stack_again(stubs, monkeypatch, sized, tmp_path):
+    """fzf's side: Tab's reload and the resize's, each sized by fzf's rows and columns."""
+    monkeypatch.setattr(model, "load", fixture)
+    monkeypatch.setenv("TMUX_PANE", PANE)
+    stubs.tmux.answer("display-message", stdout="w/main\n")
+    sidebar.redraw(str(tmp_path))
+    keys = bindings(sidebar.fzf_args(str(tmp_path), None))
+    resize = keys["resize"].removeprefix("reload:")
+    assert fields(items(sh(resize))) == [*COMPACT, gap(20 - 9 - 3), GADGET]
+    tab = keys["tab"].removeprefix("transform:")
+    reload = sh(tab.replace("{3}", "'1'"), FZF_INPUT_STATE="hidden").partition("+reload:")[2]
+    folded = [*COMPACT[:2], ("", "", "1", f"{SHUT} W tools/widget {FILL}"), *COMPACT[6:]]
+    assert fields(items(sh(reload))) == [*folded, gap(20 - 6 - 3), GADGET]
+    assert fields(items(sh(resize, FZF_LINES="8", FZF_COLUMNS="22"))) == [
+        *folded,
+        ("", "", cards.GAP, "─" * 19),
+        ("gadget", "%3", "", "✓ gadget · claude\n  done"),
+    ]
 
 
 def test_tab_folds_through_the_hidden_commands_and_reloads_nul_separated_items(tmp_path):
@@ -342,7 +424,7 @@ def test_fzf_gets_an_api_key_and_the_folder_but_not_the_theme(inside, monkeypatc
     found = json.loads(seen.read_text())
     assert set(found["env"]) == {"FZF_API_KEY", "SWITCHBOARD_SIDEBAR"}
     assert re.fullmatch("[0-9a-f]{32}", found["env"]["FZF_API_KEY"])
-    assert found["cache"] == [picker.FOLDED, picker.MODEL]
+    assert found["cache"] == [sidebar.CARDS, picker.FOLDED, picker.MODEL]
     assert esc("38;2;210;15;57", FILL) in found["stdin"]
 
 
@@ -389,7 +471,9 @@ def test_fzf_too_old(stubs, monkeypatch, capsys):
     assert capsys.readouterr().err == f"switchboard: {message}\n"
 
 
-def test_redraw_rebuilds_the_list_and_keeps_folded_repos_folded(stubs, monkeypatch, tmp_path):
+def test_redraw_rebuilds_the_list_and_keeps_folded_repos_folded(
+    stubs, monkeypatch, sized, tmp_path
+):
     folder = tmp_path / "cache"
     folder.mkdir()
     (folder / picker.MODEL).write_text(json.dumps(picker.render(fixture(), "", compact=True)))
@@ -405,6 +489,9 @@ def test_redraw_rebuilds_the_list_and_keeps_folded_repos_folded(stubs, monkeypat
         ("", "", "1", f"{OPEN} gadget"),
         ("gadget", "%3", "1", f"│   main    {FILL}"),
         ("", "", "2", f"{SHUT} W tools/widget {FILL}"),
+        gap(20 - 5 - 5),
+        GADGET,
+        W_MAIN,
     ]
     assert json.loads((folder / picker.FOLDED).read_text()) == [2]
     assert stubs.tmux.calls() == [["display-message", "-p", "-t", PANE, "#{session_name}"]]
@@ -419,11 +506,11 @@ def test_redraw_runs_through_its_hidden_command(stubs, monkeypatch, tmp_path):
     assert json.loads((tmp_path / picker.MODEL).read_text()) == []
 
 
-def test_redraw_from_a_fresh_folder_or_none(stubs, monkeypatch, tmp_path):
+def test_redraw_from_a_fresh_folder_or_none(stubs, monkeypatch, sized, tmp_path):
     monkeypatch.setattr(model, "load", fixture)
     monkeypatch.setenv("TMUX_PANE", PANE)
     stubs.tmux.answer("display-message", stdout="w/main\n")
-    assert fields(items(sidebar.redraw(str(tmp_path)))) == COMPACT
+    assert fields(items(sidebar.redraw(str(tmp_path)))) == [*COMPACT, gap(20 - 9 - 3), GADGET]
     assert sidebar.redraw("") == ""
 
 

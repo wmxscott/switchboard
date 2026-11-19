@@ -231,15 +231,18 @@ def cursor(groups: Sequence[Group], session: str) -> int | None:
     return next(found, None) if session else None
 
 
-def rows(folder: str, end: str = "\n") -> str:
+def rows(folder: str) -> str:
     groups, folded = cached(folder)
-    return "".join(f"{line}{end}" for line in lines(groups, folded))
+    return "".join(f"{line}\n" for line in lines(groups, folded))
 
 
 def fold(folder: str, group: str, read0: bool = False) -> str:
     """Toggles `group`'s fold, and gives the fzf actions that reload the lines with the cursor
     on its header. While searching, positions in fzf's list aren't ours to know. Out of a search,
-    fzf still reports the last search's query, though it no longer filters."""
+    fzf still reports the last search's query, though it no longer filters. An item in no group,
+    such as a sidebar's card, folds nothing."""
+    if not group.isdecimal():
+        return ""
     groups, folded = cached(folder)
     index = int(group)
     folded ^= {index}
@@ -294,8 +297,11 @@ def _agent(agent: Pane, last: bool) -> str:
 
 
 def describe(agent: Pane) -> str:
-    who = "teammate" if agent.role == ps.TEAMMATE else agent.agent or ps.CLAUDE
-    return f"{who} · win {agent.window} · {WORD[agent.state]}"
+    return f"{label(agent)} · win {agent.window} · {WORD[agent.state]}"
+
+
+def label(agent: Pane) -> str:
+    return "teammate" if agent.role == ps.TEAMMATE else agent.agent or ps.CLAUDE
 
 
 def _cut(text: str, width: int) -> str:

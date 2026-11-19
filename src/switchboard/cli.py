@@ -18,11 +18,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         return cmd_hook(argv[1:])
     if argv[:1] == ["state"]:
         return cmd_state(argv[1:])
-    if argv[:1] in (["__rows"], ["__fold"], ["__rows0"], ["__fold0"]):
+    if argv[:1] in (["__rows"], ["__fold"], ["__fold0"]):
         return cmd_picker_reload(argv)
     if argv[:1] == ["__preview"]:
         return cmd_preview(argv[1:])
-    if argv[:1] in (["__listen"], ["__redraw"], ["__switch"]):
+    if argv[:1] in (["__listen"], ["__redraw"], ["__switch"], ["__rows0"]):
         return cmd_sidebar_binding(argv)
     return _main(argv)
 
@@ -123,14 +123,13 @@ def cmd_pick(args) -> int:
 
 def cmd_picker_reload(argv: list[str]) -> int:
     """The picker's own fzf bindings: `__rows <folder>` and `__fold <folder> <group>`, and the
-    sidebar's `__rows0` and `__fold0`, whose lines end with a NUL."""
+    sidebar's `__fold0`, which reloads through `__rows0`."""
     from switchboard import picker
 
-    read0 = argv[0].endswith("0")
-    if argv[0].startswith("__rows"):
-        sys.stdout.write(picker.rows(argv[1], "\0" if read0 else "\n"))
+    if argv[0] == "__rows":
+        sys.stdout.write(picker.rows(argv[1]))
     else:
-        print(picker.fold(argv[1], argv[2], read0))
+        print(picker.fold(argv[1], argv[2], argv[0] == "__fold0"))
     return 0
 
 
@@ -148,7 +147,8 @@ def cmd_sidebar(args) -> int:
 
 
 def cmd_sidebar_binding(argv: list[str]) -> int:
-    """The sidebar's own fzf bindings: `__listen`, `__redraw` and `__switch <session> [pane]`."""
+    """The sidebar's own fzf bindings: `__listen`, `__redraw`, `__rows0 <folder>` and
+    `__switch <session> [pane]`."""
     import os
 
     from switchboard import sidebar
@@ -157,6 +157,8 @@ def cmd_sidebar_binding(argv: list[str]) -> int:
         sidebar.listen()
     elif argv[0] == "__redraw":
         sys.stdout.write(sidebar.redraw(os.environ.get(sidebar.FOLDER, "")))
+    elif argv[0] == "__rows0":
+        sys.stdout.write(sidebar.rows(argv[1]))
     else:
         session, pane = [*argv[1:], "", ""][:2]
         sys.stdout.write(sidebar.switch(session, pane))
