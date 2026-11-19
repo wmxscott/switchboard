@@ -4,7 +4,8 @@ An adapter is a module in this package, named for its agent: `switchboard hook -
 loads `agents/pi.py`, and an unknown name does nothing. It never runs tmux, which is
 `switchboard.core`'s job. For any agent but Claude, an event is dropped unless the hook runs
 inside the pane, as a descendant of its process. A tool with no adapter can run the verbs with
-`switchboard state <verb> [--agent NAME]`. An adapter has:
+`switchboard state <verb> [--agent NAME]`, which takes `--reason` with `needs` and `--task` with
+`working`. An adapter has:
 
 `HANDLED`
     The event names it acts on. Any other event is dropped before tmux is touched.
@@ -21,11 +22,14 @@ inside the pane, as a descendant of its process. A tool with no adapter can run 
 
 The verbs, from `switchboard.core`:
 
-    START           a new agent process: a lead, idle, with nothing pending
-    WORKING, IDLE   set the turn
+    START           a new agent process: a lead, idle, with nothing pending and no task
+    WORKING, IDLE   set the turn, keeping its task
+    working(task)   set the turn working, with its task: the line of the prompt that started it
     DONE            set the turn done, or idle when a client views the session or the pane
                     is a teammate
-    needs(key)      add a pending prompt, keyed `lead` or by a subagent's id
+    needs(key, reason)
+                    add a pending prompt, keyed `lead` or by a subagent's id, with why it needs
+                    the user; with no reason, the plain one
     resolve(key)    remove a pending prompt; RESOLVE_ALL removes every one
     TEAMMATE        mark the pane an agent-team teammate
     END             the agent has gone: unset every option

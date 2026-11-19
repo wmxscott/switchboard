@@ -5,7 +5,10 @@ from __future__ import annotations
 import sys
 from collections.abc import Sequence
 
-STATE_USAGE = "<start|working|done|idle|needs KEY|resolve KEY|all|end> [--agent NAME]"
+STATE_USAGE = (
+    "<start|working [--task TEXT]|done|idle|needs KEY [--reason TEXT]|resolve KEY|all|end>"
+    " [--agent NAME]"
+)
 
 
 def main(argv: Sequence[str] | None = None) -> int:

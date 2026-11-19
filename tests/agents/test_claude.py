@@ -20,7 +20,8 @@ from switchboard.agents import claude
 PANE = "%7"
 READ = [
     *("display-message", "-p", "-t", PANE),
-    "#{session_name}\t#{@switchboard-role}\t#{@switchboard-turn}\t#{@switchboard-pending}",
+    "#{session_name}\t#{@switchboard-role}\t#{@switchboard-turn}\t#{@switchboard-pending}"
+    "\t#{@switchboard-reasons}\t#{@switchboard-task}",
     *(";", "list-clients", "-F", "#{client_name}\t#{client_session}"),
 ]
 SCRIPT = os.path.join(os.path.dirname(sys.executable), "switchboard")
@@ -31,7 +32,7 @@ def stored(stubs, state: str = "lead:working:", viewed: bool = False) -> None:
     """What the stub tmux answers the hook's read with: the pane is in `work`, and two clients
     are elsewhere, or one of them is on `work` when `viewed`."""
     lines = [
-        "work\t" + state.replace(":", "\t"),
+        "work\t" + state.replace(":", "\t") + "\t\t",
         "/dev/ttys001\t" + ("work" if viewed else "elsewhere"),
         "/dev/ttys002\tother",
     ]
@@ -499,7 +500,7 @@ def test_the_refresh_after_a_change_updates_other_sessions(stubs, played):
     stored(stubs, "lead:working:")
     stubs.tmux.answer("list-sessions", stdout="work\t\t/w\t0\t\nother\t\t/o\t0\t\n")
     stubs.tmux.answer(
-        "list-panes", stdout="work\t0\t0\t%7\tclaude\tlead\tworking\tlead\t0\tclaude\t\n"
+        "list-panes", stdout="work\t0\t0\t%7\tclaude\tlead\tworking\tlead\t0\tclaude\t\t\t\t\n"
     )
     fire("PermissionRequest")
     writes = [call for call in stubs.tmux.calls() if "@attention" in call]

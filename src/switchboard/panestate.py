@@ -1,19 +1,28 @@
 """The pane options that hold an agent's state: the hook writes them, the rest read them.
 
 `@switchboard-at` holds Unix seconds, and `@switchboard-agent` the agent's name. The hook imports
-this module, so it imports nothing heavy.
+this module, so it imports nothing heavy; the hook has loaded `json` already.
+
+`@switchboard-reasons` holds why each pending key needs the user, oldest first, and
+`@switchboard-task` the line of the prompt that started the turn, both as JSON so that no text
+can end a tmux command with `;` or split the tab-separated read. `@switchboard-card-at` holds the
+Unix seconds of the agent's latest prompt, or of its turn ending done.
 """
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+import json
+from collections.abc import Iterable, Mapping
 
 ROLE = "@switchboard-role"
 TURN = "@switchboard-turn"
 PENDING = "@switchboard-pending"
 AT = "@switchboard-at"
 AGENT = "@switchboard-agent"
-OPTIONS = (ROLE, TURN, PENDING, AT, AGENT)
+REASONS = "@switchboard-reasons"
+TASK = "@switchboard-task"
+CARD_AT = "@switchboard-card-at"
+OPTIONS = (ROLE, TURN, PENDING, AT, AGENT, REASONS, TASK, CARD_AT)
 
 CLAUDE = "claude"
 
@@ -30,6 +39,7 @@ NEEDS = "needs"
 URGENCY = (NEEDS, DONE, WORKING, IDLE)
 
 LEAD_KEY = "lead"
+CAP = 200
 
 
 def encode_pending(keys: Iterable[str]) -> str:
@@ -43,6 +53,30 @@ def decode_pending(value: str) -> tuple[str, ...]:
     return tuple(key for key in value.split(",") if key)
 
 
+def one_line(text: str) -> str:
+    """`text` as a reason or task is stored: control characters dropped, each run of whitespace,
+    newlines included, one space, and at most `CAP` characters."""
+    kept = "".join(c for c in text if c.isspace() or not _control(c))
+    return " ".join(kept.split())[:CAP].rstrip()
+
+
+def encode_reasons(reasons: Mapping[str, str]) -> str:
+    return json.dumps(dict(reasons), ensure_ascii=False, separators=(",", ":")) if reasons else ""
+
+
+def decode_reasons(value: str) -> dict[str, str]:
+    """Each key's reason, in the order stored; a value that isn't a JSON object gives none."""
+    return {key: reason for key, reason in _json(value, dict).items() if isinstance(reason, str)}
+
+
+def encode_task(task: str) -> str:
+    return json.dumps(task, ensure_ascii=False) if task else ""
+
+
+def decode_task(value: str) -> str:
+    return _json(value, str)
+
+
 def display(turn: str, pending: tuple[str, ...]) -> str:
     if pending:
         return NEEDS
@@ -51,3 +85,15 @@ def display(turn: str, pending: tuple[str, ...]) -> str:
 
 def most_urgent(states: Iterable[str]) -> str | None:
     return min(states, key=URGENCY.index, default=None)
+
+
+def _control(c: str) -> bool:
+    return c < " " or "\x7f" <= c < "\xa0"
+
+
+def _json(value: str, kind: type):
+    try:
+        found = json.loads(value)
+    except ValueError:
+        return kind()
+    return found if isinstance(found, kind) else kind()

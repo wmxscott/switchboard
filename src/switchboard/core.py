@@ -14,15 +14,16 @@ from collections import namedtuple
 from switchboard import panestate as ps
 from switchboard import run
 
-PANE_FORMAT = "\t".join(f"#{{{name}}}" for name in ("session_name", ps.ROLE, ps.TURN, ps.PENDING))
+STORED = (ps.ROLE, ps.TURN, ps.PENDING, ps.REASONS, ps.TASK)
+PANE_FORMAT = "\t".join(f"#{{{name}}}" for name in ("session_name", *STORED))
 PID_FORMAT = f"{PANE_FORMAT}\t#{{pane_pid}}"
 CLIENTS = ("list-clients", "-F", "#{client_name}\t#{client_session}")
 ALL = "*"
 
-Verb = namedtuple("Verb", ("name", "key"), defaults=("",))
+Verb = namedtuple("Verb", ("name", "key", "text"), defaults=("", ""))
 State = namedtuple("State", ("pane", "role", "turn", "pending"))
 View = namedtuple("View", ("session", "stored", "clients", "pid"), defaults=("",))
-Stored = tuple[str, str, str]
+Stored = tuple[str, str, str, str, str]
 Client = tuple[str, str]
 
 START = Verb("start")
@@ -35,8 +36,14 @@ RESOLVE_ALL = Verb("resolve", ALL)
 NAMED = {"start": START, "working": WORKING, "done": DONE, "idle": IDLE, "end": END}
 
 
-def needs(key: str) -> Verb:
-    return Verb("needs", ps.encode_pending([key]))
+def needs(key: str, reason: str = "") -> Verb:
+    """A pending prompt, and why it needs the user; with no reason, the plain default."""
+    return Verb("needs", ps.encode_pending([key]), ps.one_line(reason))
+
+
+def working(task: str = "") -> Verb:
+    """A working turn, and the line of the prompt that started it, if known."""
+    return Verb("working", "", ps.one_line(task))
 
 
 def resolve(key: str) -> Verb:
@@ -52,6 +59,10 @@ def parse(args: list[str]) -> Verb | None:
             return RESOLVE_ALL
         case ["needs", key] if key:
             return needs(key)
+        case ["needs", key, "--reason", reason] if key:
+            return needs(key, reason)
+        case ["working", "--task", task]:
+            return working(task)
         case ["resolve", key] if key:
             return resolve(key)
     return None
@@ -82,7 +93,7 @@ def handle(adapter, event: str, payload: dict, pane: str, agent: str = ps.CLAUDE
         return
     view = read(pane, agent)
     if view is not None:
-        role, turn, pending = view.stored
+        role, turn, pending, *_ = view.stored
         state = State(pane, role, turn, ps.decode_pending(pending))
         settle(pane, view, adapter.verbs(event, payload, state), agent)
 
@@ -105,7 +116,7 @@ def settle(pane: str, view: View, verbs: list[Verb], agent: str) -> None:
     viewed = any(where == view.session for _, where in view.clients)
     state = apply(view.stored, verbs, viewed)
     if state != view.stored and placed(view, agent):
-        write(pane, state, agent)
+        write(pane, state, agent, raised(view.stored, state))
         changed(view.session, view.stored, state, view.clients)
 
 
@@ -129,31 +140,45 @@ def ancestor(pid: str) -> bool:
 
 
 def apply(stored: Stored, verbs: list[Verb], viewed: bool) -> Stored:
-    """The (role, turn, pending) that `verbs` make of `stored`. A pane with no role is a lead,
-    and one with no turn is idle."""
-    role, turn, pending = stored
+    """The (role, turn, pending, reasons, task) that `verbs` make of `stored`. A pane with no
+    role is a lead, and one with no turn is idle."""
+    role, turn, pending, stored_reasons, stored_task = stored
     role = role if role in ps.ROLES else ps.LEAD
     turn = turn if turn in ps.TURNS else ps.IDLE
     keys = set(ps.decode_pending(pending))
-    for name, key in verbs:
+    reasons = ps.decode_reasons(stored_reasons)
+    task = ps.decode_task(stored_task)
+    for name, key, text in verbs:
         match name:
             case "start":
-                role, turn, keys = ps.LEAD, ps.IDLE, set()
+                role, turn, keys, reasons, task = ps.LEAD, ps.IDLE, set(), {}, ""
             case "teammate":
                 role = ps.TEAMMATE
             case "working":
                 turn = ps.WORKING
+                task = text or task
             case "done":
                 turn = ps.IDLE if role == ps.TEAMMATE or viewed else ps.DONE
             case "idle":
                 turn = ps.IDLE
-            case "needs":
+            case "needs" if key not in keys or reasons.get(key, "") != text:
                 keys.add(key)
+                reasons.pop(key, None)
+                reasons[key] = text
             case "resolve" if key == ALL:
                 keys.clear()
             case "resolve":
                 keys.discard(key)
-    return role, turn, ps.encode_pending(keys)
+    reasons = {key: reason for key, reason in reasons.items() if key in keys}
+    return role, turn, ps.encode_pending(keys), ps.encode_reasons(reasons), ps.encode_task(task)
+
+
+def raised(before: Stored, after: Stored) -> bool:
+    """Whether `after` holds a prompt that's new or has a new reason, or a turn newly done: the
+    moves that order the agent's card."""
+    old, new = ps.decode_reasons(before[3]), ps.decode_reasons(after[3])
+    kept = [(key, reason) for key, reason in old.items() if key in new]
+    return list(new.items()) != kept or before[1] != ps.DONE == after[1]
 
 
 def end(pane: str) -> None:
@@ -183,22 +208,24 @@ def read(pane: str, agent: str = ps.CLAUDE) -> View | None:
         return None
     first, *lines = out.split("\n")
     fields = first.split("\t")
-    if len(fields) != 4 + guarded:
+    if len(fields) != 1 + len(STORED) + guarded:
         return None
-    session, role, turn, pending, *pid = fields
+    session, role, turn, pending, reasons, task, *pid = fields
     clients = [(name, where) for name, tab, where in (s.partition("\t") for s in lines) if tab]
-    return View(session, (role, turn, pending), clients, *pid)
+    return View(session, (role, turn, pending, reasons, task), clients, *pid)
 
 
-def write(pane: str, state: Stored, agent: str = ps.CLAUDE) -> None:
-    role, turn, pending = state
-    commands = [
-        ("set-option", "-p", "-t", pane, ps.ROLE, role),
-        ("set-option", "-p", "-t", pane, ps.TURN, turn),
-        ("set-option", "-p", "-t", pane, ps.AT, str(int(time.time()))),
-        ("set-option", "-p", "-t", pane, ps.AGENT, agent),
-        ("set-option", "-p", "-t", pane, ps.PENDING, pending)
-        if pending
-        else ("set-option", "-p", "-u", "-t", pane, ps.PENDING),
-    ]
-    run.tmux(*commands)
+def write(pane: str, state: Stored, agent: str = ps.CLAUDE, card: bool = False) -> None:
+    """Writes `state`, unsetting each empty option, and when `card`, the card's time."""
+    role, turn, pending, reasons, task = state
+    now = str(int(time.time()))
+    values = {ps.ROLE: role, ps.TURN: turn, ps.AT: now, ps.AGENT: agent, ps.PENDING: pending}
+    values |= {ps.REASONS: reasons, ps.TASK: task, **({ps.CARD_AT: now} if card else {})}
+    run.tmux(
+        *(
+            ("set-option", "-p", "-t", pane, name, value)
+            if value
+            else ("set-option", "-p", "-u", "-t", pane, name)
+            for name, value in values.items()
+        )
+    )

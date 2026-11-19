@@ -61,7 +61,16 @@ def test_hook_is_silent_on_bad_arguments(stubs, args):
     assert stubs.tmux.calls() == []
 
 
-@pytest.mark.parametrize("args", [["working"], ["needs", "a1", "--agent", "pi"], ["end"]])
+@pytest.mark.parametrize(
+    "args",
+    [
+        ["working"],
+        ["needs", "a1", "--agent", "pi"],
+        ["end"],
+        ["needs", "a1", "--reason", "run: ls"],
+        ["working", "--task", "fix the login"],
+    ],
+)
 @pytest.mark.parametrize("inside_tmux", [False, True])
 def test_state_is_silent(stubs, monkeypatch, args, inside_tmux):
     """Inside tmux, tmux fails: no server answers."""
@@ -80,8 +89,8 @@ def test_state_with_malformed_arguments_exits_2_with_one_line(stubs, monkeypatch
     result = run("state", "needs")
     assert (result.returncode, result.stdout) == (2, "")
     assert result.stderr == (
-        "usage: switchboard state"
-        " <start|working|done|idle|needs KEY|resolve KEY|all|end> [--agent NAME]\n"
+        "usage: switchboard state <start|working [--task TEXT]|done|idle"
+        "|needs KEY [--reason TEXT]|resolve KEY|all|end> [--agent NAME]\n"
     )
     assert stubs.tmux.calls() == []
 

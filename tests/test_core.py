@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+import time
 from types import ModuleType, SimpleNamespace
 
 import pytest
@@ -17,7 +18,10 @@ from switchboard import agents, cli, core, hook, panestate
 from switchboard.agents import claude
 
 PANE = "%7"
-FORMAT = "#{session_name}\t#{@switchboard-role}\t#{@switchboard-turn}\t#{@switchboard-pending}"
+FORMAT = (
+    "#{session_name}\t#{@switchboard-role}\t#{@switchboard-turn}\t#{@switchboard-pending}"
+    "\t#{@switchboard-reasons}\t#{@switchboard-task}"
+)
 CLIENTS = [";", "list-clients", "-F", "#{client_name}\t#{client_session}"]
 READ = ["display-message", "-p", "-t", PANE, FORMAT, *CLIENTS]
 GUARDED_READ = ["display-message", "-p", "-t", PANE, f"{FORMAT}\t#{{pane_pid}}", *CLIENTS]
@@ -25,7 +29,7 @@ GUARDED_READ = ["display-message", "-p", "-t", PANE, f"{FORMAT}\t#{{pane_pid}}",
 
 def apply(before: str, *verbs: core.Verb, viewed: bool = False) -> str:
     role, turn, pending = before.split(":")
-    return ":".join(core.apply((role, turn, pending), list(verbs), viewed))
+    return ":".join(core.apply((role, turn, pending, "", ""), list(verbs), viewed)[:3])
 
 
 @pytest.mark.parametrize(
@@ -62,9 +66,105 @@ def test_keys_are_cleaned_so_none_is_all(key, clean):
     assert core.resolve(key) != core.RESOLVE_ALL
 
 
-def stored(stubs, state: str = "lead:working:", pid: int | None = None) -> None:
+Reasons = dict[str, str]
+
+
+def holding(reasons: Reasons, task: str = "", turn: str = "working") -> core.Stored:
+    """A lead's stored state, pending `reasons`."""
+    pending = panestate.encode_pending(reasons)
+    return ("lead", turn, pending, panestate.encode_reasons(reasons), panestate.encode_task(task))
+
+
+def why(reasons: Reasons, task: str, *verbs: core.Verb) -> tuple[str, Reasons, str]:
+    """The pending keys, reasons and task that `verbs` make of a working lead's."""
+    _, _, pending, found, task = core.apply(holding(reasons, task), list(verbs), False)
+    return pending, panestate.decode_reasons(found), panestate.decode_task(task)
+
+
+XY = {"x": "run: ls", "y": "asks: ok?"}
+
+
+@pytest.mark.parametrize(
+    ("verbs", "after"),
+    [
+        ([core.needs("z", "edit: a.py")], ("x,y,z", {**XY, "z": "edit: a.py"}, "fix it")),
+        ([core.needs("z")], ("x,y,z", {**XY, "z": ""}, "fix it")),
+        ([core.needs("x", "run: ls")], ("x,y", XY, "fix it")),
+        ([core.needs("x", "run: pwd")], ("x,y", {"y": "asks: ok?", "x": "run: pwd"}, "fix it")),
+        ([core.needs("x")], ("x,y", {"y": "asks: ok?", "x": ""}, "fix it")),
+        ([core.resolve("x")], ("y", {"y": "asks: ok?"}, "fix it")),
+        ([core.resolve("z")], ("x,y", XY, "fix it")),
+        ([core.RESOLVE_ALL], ("", {}, "fix it")),
+        ([core.working("add a test")], ("x,y", XY, "add a test")),
+        ([core.working()], ("x,y", XY, "fix it")),
+        ([core.WORKING], ("x,y", XY, "fix it")),
+        ([core.DONE], ("x,y", XY, "fix it")),
+        ([core.IDLE], ("x,y", XY, "fix it")),
+        ([core.TEAMMATE], ("x,y", XY, "fix it")),
+        ([core.START], ("", {}, "")),
+        ([core.START, core.needs("x", "run: ls")], ("x", {"x": "run: ls"}, "")),
+    ],
+)
+def test_each_verb_on_reasons_and_the_task(verbs, after):
+    pending, reasons, task = why(XY, "fix it", *verbs)
+    assert (pending, list(reasons.items()), task) == (after[0], list(after[1].items()), after[2])
+
+
+def test_a_pending_key_with_no_reason_stored_has_the_plain_one():
+    older = ("lead", "working", "x", "", "")
+    assert core.apply(older, [core.needs("x")], False) == older
+    assert core.apply(older, [core.needs("x", "run: ls")], False)[3] == '{"x":"run: ls"}'
+
+
+def test_reasons_never_outlive_their_keys():
+    stale = ("lead", "working", "x", panestate.encode_reasons({"x": "a", "gone": "b"}), "")
+    assert core.apply(stale, [], False)[3] == panestate.encode_reasons({"x": "a"})
+
+
+def test_verbs_carry_their_text_as_stored():
+    assert core.needs("a1", " run:\n  ls\x1b ") == core.Verb("needs", "a1", "run: ls")
+    assert core.working("fix\tthe login\n") == core.Verb("working", "", "fix the login")
+    assert core.working() == core.WORKING
+
+
+def raises(reasons: Reasons, *verbs: core.Verb, turn: str = "working", viewed=False) -> bool:
+    before = holding(reasons, turn=turn)
+    return core.raised(before, core.apply(before, list(verbs), viewed))
+
+
+@pytest.mark.parametrize(
+    ("reasons", "verbs", "turn", "card"),
+    [
+        ({}, [core.needs("x", "run: ls")], "working", True),
+        ({"x": "run: ls"}, [core.needs("y")], "working", True),
+        (XY, [core.needs("y", "asks: ok?")], "working", False),
+        (XY, [core.needs("x", "run: ls")], "working", False),
+        ({"x": "run: ls"}, [core.needs("x", "run: pwd")], "working", True),
+        ({}, [core.DONE], "working", True),
+        ({"x": ""}, [core.resolve("x"), core.DONE], "working", True),
+        (XY, [core.resolve("y")], "working", False),
+        (XY, [core.RESOLVE_ALL], "working", False),
+        (XY, [core.WORKING], "idle", False),
+        ({}, [core.working("fix it")], "idle", False),
+        ({}, [core.IDLE], "done", False),
+        ({}, [core.DONE], "done", False),
+        ({"x": ""}, [core.START, core.WORKING], "done", False),
+    ],
+)
+def test_the_card_time_moves_on_a_new_prompt_or_a_turn_done(reasons, verbs, turn, card):
+    assert raises(reasons, *verbs, turn=turn) == card
+
+
+def test_a_turn_done_where_a_client_is_looking_moves_no_card_time():
+    assert not raises({}, core.DONE, viewed=True)
+
+
+def stored(
+    stubs, state: str = "lead:working:", pid: int | None = None, reasons: str = "", task: str = ""
+) -> None:
     """The pane's state, and its process id for a guarded read."""
-    first = "work\t" + state.replace(":", "\t") + ("" if pid is None else f"\t{pid}")
+    first = "\t".join(["work", *state.split(":"), reasons, task])
+    first += "" if pid is None else f"\t{pid}"
     lines = [first, "/dev/ttys001\telsewhere"]
     stubs.tmux.answer("display-message", stdout="\n".join(lines) + "\n")
 
@@ -131,6 +231,37 @@ def test_no_verbs_still_registers_an_unknown_pane(stubs):
     stored(stubs, "::")
     core.handle(adapter([]), "go", {}, PANE)
     assert after(stubs) == "lead:idle:"
+
+
+def recent(value: str | None) -> bool:
+    return value is not None and abs(int(value) - time.time()) < 60
+
+
+def test_a_reason_is_written_once_with_the_card_time(stubs):
+    stored(stubs, "lead:working:", task=panestate.encode_task("fix it"))
+    core.perform(PANE, [core.needs("x", "run: ls")])
+    options = written(stubs)
+    assert options[panestate.PENDING] == "x"
+    assert options[panestate.REASONS] == '{"x":"run: ls"}'
+    assert options[panestate.TASK] == '"fix it"'
+    assert recent(options[panestate.CARD_AT])
+    assert recent(options[panestate.AT])
+    assert [call[0] for call in stubs.tmux.calls()].count("set-option") == 1
+
+
+def test_resolving_the_last_reason_unsets_it_and_keeps_the_card_time(stubs):
+    stored(stubs, "lead:working:x", reasons='{"x":"run: ls"}')
+    core.perform(PANE, [core.resolve("x")])
+    options = written(stubs)
+    assert options[panestate.REASONS] is None
+    assert options[panestate.TASK] is None
+    assert panestate.CARD_AT not in options
+
+
+def test_the_same_prompt_again_writes_nothing(stubs):
+    stored(stubs, "lead:working:x,y", reasons='{"x":"run: ls","y":""}', task='"fix it"')
+    core.perform(PANE, [core.needs("x", "run: ls"), core.working()])
+    assert [call[0] for call in stubs.tmux.calls()] == ["display-message"]
 
 
 def test_no_change_writes_nothing(stubs):
@@ -207,6 +338,8 @@ def pane(monkeypatch):
         (["resolve", "a1"], "lead:working:a1,lead", "lead:working:lead"),
         (["resolve", "all"], "lead:working:a1,lead", "lead:working:"),
         (["resolve", "x,y"], "lead:working:x_y", "lead:working:"),
+        (["needs", "a1", "--reason", "run: ls"], "lead:working:lead", "lead:working:a1,lead"),
+        (["working", "--task", "fix it"], "lead:idle:", "lead:working:"),
     ],
 )
 def test_each_state_verb(stubs, pane, capsys, args, before, expected):
@@ -215,6 +348,23 @@ def test_each_state_verb(stubs, pane, capsys, args, before, expected):
     assert after(stubs) == expected
     assert written(stubs)[panestate.AGENT] == "claude"
     assert stubs.tmux.calls()[0] == READ
+    assert capsys.readouterr() == ("", "")
+
+
+@pytest.mark.parametrize(
+    ("args", "option", "value"),
+    [
+        (["needs", "x", "--reason", "run:\n  ls -la"], panestate.REASONS, '{"x":"run: ls -la"}'),
+        (["needs", "x", "--reason", ""], panestate.REASONS, '{"x":""}'),
+        (["needs", "x", "--agent", "claude", "--reason", "a;"], panestate.REASONS, '{"x":"a;"}'),
+        (["working", "--task", "fix the login"], panestate.TASK, '"fix the login"'),
+        (["--agent", "claude", "working", "--task", "a\tb"], panestate.TASK, '"a b"'),
+    ],
+)
+def test_state_stores_a_reason_or_a_task(stubs, pane, capsys, args, option, value):
+    stored(stubs, "lead:idle:")
+    assert state(*args) == 0
+    assert written(stubs)[option] == value
     assert capsys.readouterr() == ("", "")
 
 
@@ -240,6 +390,15 @@ def test_state_end_unsets_every_option_without_reading(stubs, pane):
         ["working", "--agent", "a b"],
         ["working", "--bogus"],
         ["--help"],
+        ["needs", "x", "--reason"],
+        ["needs", "--reason", "run: ls"],
+        ["needs", "x", "--reason", "a", "b"],
+        ["needs", "x", "--task", "t"],
+        ["working", "--task"],
+        ["working", "--task", "a", "b"],
+        ["working", "--reason", "t"],
+        ["done", "--task", "t"],
+        ["resolve", "x", "--reason", "t"],
     ],
 )
 def test_malformed_state_arguments_exit_2_with_one_line(stubs, pane, capsys, args):
