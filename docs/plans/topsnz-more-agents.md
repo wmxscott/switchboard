@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | 1.1.0 released · next: the user's tmux check, then Stack D (sidebar, 1.2.0) |
+| **Status** | landed · 1.2.0 released with the sidebar · waiting on the user's live check |
 | **Updated** | 2026-11-18 |
 | **Tracker** | — |
 | **Related** | [switchboard plan](topih3-switchboard.md) (S10, the event mapping); [design](../superpowers/specs/2026-11-18-switchboard-design.md) |
@@ -218,9 +218,9 @@ It merges after 1.1.0 is in the tap.
 | D2 | `switchboard sidebar --toggle`, the pane tag, the README, release 1.2.0 | D1 |
 | D3 | dotfiles: `bind b` and `@resurrect-processes` for the sidebar | D2 |
 
-- [ ] D1: sidebar list
-- [ ] D2: toggle and 1.2.0
-- [ ] D3: dotfiles binding
+- [x] D1: sidebar list
+- [x] D2: toggle and 1.2.0
+- [x] D3: dotfiles binding
 
 ## Forest from the trees
 
@@ -251,3 +251,4 @@ The advisor isn't available, so here's my own case against the plan.
 - 2026-11-18: C1 landed as #12, S1a as #13 and S1b as #14. X1 is ai-toolkit#35 and P1 is ai-toolkit#36, both open and waiting for 1.1.0. Plan amended with S12 and Stack D, the sidebar the user asked for (stays in its window, `prefix b`).
 - 2026-11-18: S2 landed as #16. S3 (README and the 1.1.0 bump) opened; the tag waits for the picker look pass so 1.1.0 carries both.
 - 2026-11-18: S3 landed as #17, and the picker look pass (shared with wkt 2.3.0) as #18. Released 1.1.0 (tap#18; wkt 2.3.0 is tap#19). X1 landed as ai-toolkit#35 and P1 as #36, installed here; the private `shared:codex` task installs the plugin (dotfiles-private#6).
+- 2026-11-18: D1 landed as #20 and D2 as #21. D2 launches the sidebar under `sh -c '…; exit'`, because tmux-resurrect saves the command a pane's shell runs; a folded repo shows its most urgent dot; the state dots are now `nf-cod-circle` and `nf-fa-circle` (the user's choice). Released 1.2.0 (tap#20). D3 landed as dotfiles#51: `prefix b`, the `session-created`/`session-closed` refresh hooks and the resurrect entry.
