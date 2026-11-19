@@ -239,6 +239,7 @@ def test_keys(picking):
     call = picked(stubs)
     args = call["args"]
     assert "--no-input" in args
+    assert "--read0" not in args
     assert "--no-sort" in args
     assert "--delimiter=\t" in args
     assert "--with-nth=4" in args

@@ -134,15 +134,21 @@ def fzf_args(folder: str, at: int | None) -> list[str]:
 
 
 def list_args(
-    folder: str, at: int | None, keys: str, hints: tuple[str, str], leave: str
+    folder: str,
+    at: int | None,
+    keys: str,
+    hints: tuple[str, str],
+    leave: str,
+    read0: bool = False,
 ) -> list[str]:
     """Search starts off: `/` shows an empty input line, and Esc then hides it and shows every line
     again. Out of a search, Esc does `leave`."""
     hint, search_hint = hints
-    fold = shlex.join([*command(), "__fold", folder])
+    fold = shlex.join([*command(), "__fold0" if read0 else "__fold", folder])
     out = shlex.quote(back(hint))
     args = [
         "--ansi",
+        *(["--read0"] if read0 else []),
         "--no-sort",
         *LOOK,
         "--no-info",
@@ -225,12 +231,12 @@ def cursor(groups: Sequence[Group], session: str) -> int | None:
     return next(found, None) if session else None
 
 
-def rows(folder: str) -> str:
+def rows(folder: str, end: str = "\n") -> str:
     groups, folded = cached(folder)
-    return "".join(f"{line}\n" for line in lines(groups, folded))
+    return "".join(f"{line}{end}" for line in lines(groups, folded))
 
 
-def fold(folder: str, group: str) -> str:
+def fold(folder: str, group: str, read0: bool = False) -> str:
     """Toggles `group`'s fold, and gives the fzf actions that reload the lines with the cursor
     on its header. While searching, positions in fzf's list aren't ours to know. Out of a search,
     fzf still reports the last search's query, though it no longer filters."""
@@ -238,7 +244,7 @@ def fold(folder: str, group: str) -> str:
     index = int(group)
     folded ^= {index}
     Path(folder, FOLDED).write_text(json.dumps(sorted(folded)), encoding="utf-8")
-    reload = f"reload:{shlex.join([*command(), '__rows', folder])}"
+    reload = f"reload:{shlex.join([*command(), '__rows0' if read0 else '__rows', folder])}"
     if os.environ.get("FZF_INPUT_STATE") == "enabled" and os.environ.get("FZF_QUERY"):
         return reload
     above = groups[:index]

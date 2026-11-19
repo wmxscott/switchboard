@@ -1,5 +1,6 @@
 """The sidebar: the picker's list, compact and long-lived, in a pane of its own. Enter switches the
-client viewing it, and the sidebar stays.
+client viewing it, and the sidebar stays. Its lines end with a NUL (`--read0`), so that one item
+can span lines.
 
 Its fzf listens on a local port, which it records with its API key in its pane's
 `@switchboard-sidebar`. `refresh` finds them there, in the pane read it already makes, and asks
@@ -49,7 +50,7 @@ def show() -> int:
         groups = _draw(folder, current)
         result = subprocess.run(
             ["fzf", *fzf_args(folder, picker.cursor(groups, current))],
-            input=picker.rows(folder),
+            input=picker.rows(folder, "\0"),
             stdout=subprocess.PIPE,
             env=env,
             encoding="utf-8",
@@ -130,7 +131,7 @@ def fzf_args(folder: str, at: int | None) -> list[str]:
     switch = shlex.join([*picker.command(), "__switch"])
     listen = shlex.join([*picker.command(), "__listen"])
     return [
-        *picker.list_args(folder, at, KEYS, ("", ""), "ignore"),
+        *picker.list_args(folder, at, KEYS, ("", ""), "ignore", read0=True),
         f"--listen={HOST}:0",
         "--bind",
         f"start:execute-silent:{listen}",
@@ -164,7 +165,7 @@ def redraw(folder: str) -> str:
     from switchboard import attention
 
     _draw(folder, attention.current_session() or "")
-    return picker.rows(folder)
+    return picker.rows(folder, "\0")
 
 
 def poke(endpoints: Iterable[str]) -> None:

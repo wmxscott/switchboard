@@ -49,6 +49,12 @@ def fields(lines) -> list[tuple[str, ...]]:
     return [tuple(plain(line).split("\t")) for line in lines]
 
 
+def items(text: str) -> list[str]:
+    """fzf's `--read0` input, where every item ends with a NUL."""
+    assert text == "" or text.endswith("\0")
+    return text.split("\0")[:-1]
+
+
 def worktree(name: str, branch: str, repo: str, *agents: tuple, status=None) -> Row:
     panes = tuple(Pane(name, window, f"%{window}", "claude", *state) for window, *state in agents)
     tree = Worktree(f"/src/{name}", branch, repo)
@@ -208,6 +214,7 @@ def test_keys_and_look(inside):
     args = call["args"]
     for arg in ("--no-input", "--no-sort", "--delimiter=\t", "--with-nth=4", "--no-info"):
         assert arg in args
+    assert "--read0" in args
     assert "--listen=127.0.0.1:0" in args
     assert not [arg for arg in args if arg.startswith(("--preview", "--color"))]
     keys = bindings(args)
@@ -218,9 +225,24 @@ def test_keys_and_look(inside):
     enter = shlex.split(keys["enter,double-click"].removeprefix("transform:"))
     assert enter == [*SELF, "__switch", "{1}", "{2}"]
     tab = shlex.split(keys["tab"].removeprefix("transform:"))
-    assert tab[:4] == [*SELF, "__fold"]
+    assert tab[:4] == [*SELF, "__fold0"]
     assert tab[5] == "{3}"
-    assert fields(call["stdin"].splitlines()) == COMPACT
+    assert fields(items(call["stdin"])) == COMPACT
+
+
+def test_tab_folds_through_the_hidden_commands_and_reloads_nul_separated_items(tmp_path):
+    """fzf's side, done by hand: run the Tab binding, then the reload it asks for."""
+    (tmp_path / picker.MODEL).write_text(json.dumps(picker.render(fixture(), "", compact=True)))
+    tab = bindings(sidebar.fzf_args(str(tmp_path), None))["tab"].removeprefix("transform:")
+    actions = sh(tab.replace("{3}", "'1'"), FZF_INPUT_STATE="hidden")
+    position, _, reload = actions.strip().partition("+reload:")
+    assert position == "pos(3)"
+    assert shlex.split(reload) == [*SELF, "__rows0", str(tmp_path)]
+    assert fields(items(sh(reload))) == [
+        *COMPACT[:2],
+        ("", "", "1", f"{SHUT} W tools/widget {FILL}"),
+        *COMPACT[6:],
+    ]
 
 
 def test_no_key_closes_it(inside):
@@ -377,7 +399,7 @@ def test_redraw_rebuilds_the_list_and_keeps_folded_repos_folded(stubs, monkeypat
     monkeypatch.setenv("TMUX_PANE", PANE)
     stubs.tmux.answer("display-message", stdout="alpha\n")
     out = sidebar.redraw(str(folder))
-    assert fields(out.splitlines()) == [
+    assert fields(items(out)) == [
         ("", "", "0", f"{OPEN} alpha"),
         ("alpha", "%1", "0", f"│ {HERE} main    {FILL}"),
         ("", "", "1", f"{OPEN} gadget"),
@@ -393,7 +415,7 @@ def test_redraw_runs_through_its_hidden_command(stubs, monkeypatch, tmp_path):
     monkeypatch.setenv("TMUX_PANE", PANE)
     stubs.tmux.answer("*", code=1, stderr="no server running\n")
     out = sh(shlex.join([*SELF, "__redraw"]), SWITCHBOARD_SIDEBAR=str(tmp_path))
-    assert fields(out.splitlines()) == []
+    assert items(out) == []
     assert json.loads((tmp_path / picker.MODEL).read_text()) == []
 
 
@@ -401,7 +423,7 @@ def test_redraw_from_a_fresh_folder_or_none(stubs, monkeypatch, tmp_path):
     monkeypatch.setattr(model, "load", fixture)
     monkeypatch.setenv("TMUX_PANE", PANE)
     stubs.tmux.answer("display-message", stdout="w/main\n")
-    assert fields(sidebar.redraw(str(tmp_path)).splitlines()) == COMPACT
+    assert fields(items(sidebar.redraw(str(tmp_path)))) == COMPACT
     assert sidebar.redraw("") == ""
 
 
