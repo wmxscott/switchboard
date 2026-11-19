@@ -30,8 +30,10 @@ if TYPE_CHECKING:
 
 MIN_FZF = (0, 59)
 KEYS = "j:down,k:up,q:abort"
-SEARCH_KEYS = "show-input+unbind(j,k,/,q)"
-BACK_KEYS = "clear-query+search()+hide-input+rebind(j,k,/,q)"
+# fzf drops any change to the query made while its input is hidden, which Esc's transform ends with,
+# so `/` clears the query once the input shows, and Esc only searches for nothing.
+SEARCH_KEYS = "show-input+clear-query+unbind(j,k,/,q)"
+BACK_KEYS = "search()+hide-input+rebind(j,k,/,q)"
 HINT = "j/k move · / search · tab fold · ↵ switch · q/esc close"
 SEARCH_HINT = "↑/↓ move · tab fold · ↵ switch · esc back"
 LOOK = ("--layout=reverse", "--height=100%", "--border=none", "--margin=0", "--padding=0")
@@ -134,8 +136,8 @@ def fzf_args(folder: str, at: int | None) -> list[str]:
 def list_args(
     folder: str, at: int | None, keys: str, hints: tuple[str, str], leave: str
 ) -> list[str]:
-    """Search starts off: `/` shows the input line, and Esc then clears it and goes back. Out of a
-    search, Esc does `leave`."""
+    """Search starts off: `/` shows an empty input line, and Esc then hides it and shows every line
+    again. Out of a search, Esc does `leave`."""
     hint, search_hint = hints
     fold = shlex.join([*command(), "__fold", folder])
     out = shlex.quote(back(hint))
@@ -230,13 +232,14 @@ def rows(folder: str) -> str:
 
 def fold(folder: str, group: str) -> str:
     """Toggles `group`'s fold, and gives the fzf actions that reload the lines with the cursor
-    on its header. While searching, positions in fzf's list aren't ours to know."""
+    on its header. While searching, positions in fzf's list aren't ours to know. Out of a search,
+    fzf still reports the last search's query, though it no longer filters."""
     groups, folded = cached(folder)
     index = int(group)
     folded ^= {index}
     Path(folder, FOLDED).write_text(json.dumps(sorted(folded)), encoding="utf-8")
     reload = f"reload:{shlex.join([*command(), '__rows', folder])}"
-    if os.environ.get("FZF_QUERY"):
+    if os.environ.get("FZF_INPUT_STATE") == "enabled" and os.environ.get("FZF_QUERY"):
         return reload
     above = groups[:index]
     header = 1 + sum(1 + (0 if i in folded else len(g["rows"])) for i, g in enumerate(above))

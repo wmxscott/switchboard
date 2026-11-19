@@ -29,7 +29,7 @@ SELF = [sys.executable, "-m", "switchboard"]
 DOT, FILL, OPEN, SHUT, HERE = "\ueabc", "\uf111", "\uf0d7", "\uf0da", "\uf192"
 TEXT, OVERLAY = "38;2;202;211;245", "38;2;128;135;162"
 RED, GREEN, PEACH = "38;2;237;135;150", "38;2;166;218;149", "38;2;245;169;127"
-BACK = "clear-query+search()+hide-input+rebind(j,k,/,q)"
+BACK = "search()+hide-input+rebind(j,k,/,q)"
 
 
 @pytest.fixture(autouse=True)
@@ -212,7 +212,7 @@ def test_keys_and_look(inside):
     assert not [arg for arg in args if arg.startswith(("--preview", "--color"))]
     keys = bindings(args)
     assert args[args.index("j:down,k:up,q:ignore") - 1] == "--bind"
-    assert keys["/"] == "show-input+unbind(j,k,/,q)"
+    assert keys["/"] == "show-input+clear-query+unbind(j,k,/,q)"
     assert keys["load"] == "pos(4)+unbind(load)"
     assert shlex.split(keys["start"].removeprefix("execute-silent:")) == [*SELF, "__listen"]
     enter = shlex.split(keys["enter,double-click"].removeprefix("transform:"))

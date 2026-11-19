@@ -249,7 +249,9 @@ def test_keys(picking):
     assert not [arg for arg in args if arg.startswith("--color")]
     keys = bindings(args)
     assert args[args.index(KEYS) - 1] == "--bind"
-    assert keys["/"] == f"show-input+unbind(j,k,/,q)+change-header:{header(SEARCH_HINTS)}"
+    assert keys["/"] == (
+        f"show-input+clear-query+unbind(j,k,/,q)+change-header:{header(SEARCH_HINTS)}"
+    )
     assert keys["enter"] == "transform:[ -n {1} ] && echo accept"
     assert keys["load"] == "pos(5)+unbind(load)"
     command = shlex.split(keys["tab"].removeprefix("transform:"))
@@ -282,10 +284,7 @@ def test_no_cursor_binding_without_the_current_session(picking):
 @pytest.mark.parametrize(
     ("state", "out"),
     [
-        (
-            "enabled",
-            f"clear-query+search()+hide-input+rebind(j,k,/,q)+change-header:{header(HINTS)}",
-        ),
+        ("enabled", f"search()+hide-input+rebind(j,k,/,q)+change-header:{header(HINTS)}"),
         ("hidden", "abort\n"),
     ],
 )
@@ -298,8 +297,15 @@ def test_esc_leaves_a_search_else_closes(monkeypatch, state, out):
 def test_empty_hints_leave_no_header_rows():
     args = picker.list_args("/f", None, KEYS, ("", ""), "abort")
     assert not [arg for arg in args if arg.startswith("--header") or "change-header" in arg]
-    assert bindings(args)["/"] == "show-input+unbind(j,k,/,q)"
-    assert picker.back("") == "clear-query+search()+hide-input+rebind(j,k,/,q)"
+    assert bindings(args)["/"] == "show-input+clear-query+unbind(j,k,/,q)"
+    assert picker.back("") == "search()+hide-input+rebind(j,k,/,q)"
+
+
+def test_slash_clears_the_query_once_the_input_shows():
+    """fzf drops any change to the query made while its input is hidden: before `show-input`, or
+    in Esc's transform, which ends with `hide-input`."""
+    actions = picker.SEARCH_KEYS.split("+")
+    assert actions.index("show-input") < actions.index("clear-query")
 
 
 @pytest.mark.parametrize(("session", "out"), [("w/main", "accept\n"), ("", "")])
@@ -441,6 +447,7 @@ def test_outside_tmux(stubs, capsys):
 @pytest.fixture
 def cache(tmp_path, monkeypatch):
     monkeypatch.delenv("FZF_QUERY", raising=False)
+    monkeypatch.delenv("FZF_INPUT_STATE", raising=False)
     folder = tmp_path / "cache"
     folder.mkdir()
     (folder / picker.MODEL).write_text(json.dumps(picker.render(fixture(), "w/main")))
@@ -472,7 +479,15 @@ def test_tab_folds_and_keeps_the_cursor_on_the_header(cache):
 
 def test_tab_while_searching_reloads_without_moving_the_cursor(cache, monkeypatch):
     monkeypatch.setenv("FZF_QUERY", "zed")
+    monkeypatch.setenv("FZF_INPUT_STATE", "enabled")
     assert picker.fold(cache, "1").startswith("reload:")
+
+
+def test_tab_after_a_search_ignores_its_query(cache, monkeypatch):
+    """Out of a search, fzf still reports the last search's query, though it no longer filters."""
+    monkeypatch.setenv("FZF_QUERY", "zed")
+    monkeypatch.setenv("FZF_INPUT_STATE", "hidden")
+    assert picker.fold(cache, "1").startswith("pos(4)+reload:")
 
 
 @pytest.mark.parametrize(("session", "out"), [("'w/main'", "w/main\n"), ("''", "")])
