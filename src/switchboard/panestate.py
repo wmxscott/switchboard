@@ -8,6 +8,9 @@ this module, so it imports nothing heavy; the hook has loaded `json` already.
 can end a tmux command with `;` or split the tab-separated read. `@switchboard-card-at` holds the
 Unix seconds of the agent's latest prompt, or of its turn ending done.
 
+`@switchboard-session-id` holds the agent's own session id, for another tool to read through
+`#{@switchboard-session-id}`, so it's stored as it is, never encoded.
+
 `@switchboard-sidebar` marks a sidebar's pane (see `switchboard.sidebar`).
 """
 
@@ -24,7 +27,8 @@ AGENT = "@switchboard-agent"
 REASONS = "@switchboard-reasons"
 TASK = "@switchboard-task"
 CARD_AT = "@switchboard-card-at"
-OPTIONS = (ROLE, TURN, PENDING, AT, AGENT, REASONS, TASK, CARD_AT)
+SESSION_ID = "@switchboard-session-id"
+OPTIONS = (ROLE, TURN, PENDING, AT, AGENT, REASONS, TASK, CARD_AT, SESSION_ID)
 
 SIDEBAR = "@switchboard-sidebar"
 # A tmux format, not empty when the window it's expanded for has a sidebar.
@@ -57,6 +61,14 @@ def encode_pending(keys: Iterable[str]) -> str:
 
 def decode_pending(value: str) -> tuple[str, ...]:
     return tuple(key for key in value.split(",") if key)
+
+
+def session_id(value: object) -> str:
+    """`value` when it's at most `CAP` ASCII letters, digits, `_`, `.` and `-`, else "": a
+    mangled id would name another session."""
+    if not isinstance(value, str) or len(value) > CAP:
+        return ""
+    return value if all(c.isascii() and (c.isalnum() or c in "_.-") for c in value) else ""
 
 
 def one_line(text: str) -> str:

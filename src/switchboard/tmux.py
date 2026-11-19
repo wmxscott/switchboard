@@ -54,6 +54,7 @@ class Pane:
     card_at: int = 0
     sidebar: str = ""
     index: int = 0
+    session_id: str = ""
 
     @property
     def is_agent(self) -> bool:
@@ -82,11 +83,12 @@ def parse_sessions(text: str) -> list[Session]:
 def parse_panes(text: str) -> list[Pane]:
     found = []
     for row in _rows(text, len(PANE_FIELDS)):
-        name, win, index, pid, cmd, role, turn, keys, at, agent, why, task, card, sidebar = row
+        name, win, index, pid, cmd, role, turn, keys, at, agent, why, task, card, sid, sidebar = row
         pending = panestate.decode_pending(keys)
         reasons = tuple(panestate.decode_reasons(why).items())
         stored = (role, turn, pending, _int(at), agent, reasons, panestate.decode_task(task))
-        found.append(Pane(name, _int(win), pid, cmd, *stored, _int(card), sidebar, _int(index)))
+        rest = (_int(card), sidebar, _int(index), sid)
+        found.append(Pane(name, _int(win), pid, cmd, *stored, *rest))
     return found
 
 

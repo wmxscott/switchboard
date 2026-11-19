@@ -12,7 +12,7 @@ There are five pieces:
 - **The alert.** A tmux message on every client whose window has no sidebar, and a short sound, when an agent in a session no one is looking at needs you or finishes.
 - **The hook.** Each agent runs `switchboard hook [--agent NAME] <event>` on its events, and that keeps its state up to date. Claude Code and Codex run it from their hooks, and Pi from an extension. Other agents can be [added](#adding-an-agent).
 
-State lives in tmux pane options on each agent's pane. There's no daemon, no polling and no state file.
+State lives in tmux pane options on each agent's pane. There's no daemon, no polling and no state file. One of them, `@switchboard-session-id`, holds the agent's own session id, so another tool can find the session of a pane's agent, such as hotbar's `env` with `#{@switchboard-session-id}`.
 
 ## The picker
 
@@ -462,7 +462,8 @@ The verbs, from `switchboard.core`:
 
 | Verb | Does |
 |---|---|
-| `START` | A new agent process: a lead, idle, with nothing pending and no task |
+| `START` | A new agent process: a lead, idle, with nothing pending, no task and no session id |
+| `session(id)` | Record the agent's own session id in `@switchboard-session-id`. Pass the payload's field as it comes: an id that isn't letters, digits, `_`, `.` and `-` changes nothing. Never pass a subagent's |
 | `WORKING`, `IDLE` | Set the turn, keeping its task |
 | `working(task)` | Set the turn working, with its task: the line of the prompt that started it |
 | `DONE` | Set the turn done, or idle when a client is viewing the session or the pane is a teammate. The task is kept |
@@ -524,7 +525,7 @@ There's no list to add it to. `switchboard hook --agent acme` imports `switchboa
 An adapter's tests go in `tests/agents/test_<name>.py`. The `drive` fixture in `tests/agents/conftest.py` sends events through `switchboard hook --agent <name>`, against stub `tmux` and `ps`:
 
 - **`drive(name, field)`** returns a `Driver` for the agent, whose payloads carry the event's name in `field`.
-- **`stored(state, viewed=False, inside=True, reasons=None, task="")`** sets the pane's stored state, written `role:turn:pending`, as in `lead:working:lead`. `viewed` puts a client on the pane's session, and `inside=False` runs the hook outside the pane. `reasons`, a dict of key to reason, and `task` are stored too.
+- **`stored(state, viewed=False, inside=True, reasons=None, task="", session_id="")`** sets the pane's stored state, written `role:turn:pending`, as in `lead:working:lead`. `viewed` puts a client on the pane's session, and `inside=False` runs the hook outside the pane. `reasons`, a dict of key to reason, `task` and `session_id` are stored too.
 - **`fire(event, **fields)`** sends the event, with `fields` in its payload.
 - **`after()`** is the state written, or `None` for no write. It also checks that the write labels the pane with the agent.
 - **`reasons()` and `task()`** are the reasons and the task written, or `None` for no write.

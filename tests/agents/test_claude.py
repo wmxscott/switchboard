@@ -21,7 +21,7 @@ PANE = "%7"
 READ = [
     *("display-message", "-p", "-t", PANE),
     "#{session_name}\t#{@switchboard-role}\t#{@switchboard-turn}\t#{@switchboard-pending}"
-    "\t#{@switchboard-reasons}\t#{@switchboard-task}",
+    "\t#{@switchboard-reasons}\t#{@switchboard-task}\t#{@switchboard-session-id}",
     *(
         ";",
         "list-clients",
@@ -40,14 +40,17 @@ def stored(
     reasons: dict[str, str] | None = None,
     task: str = "",
     sidebars: tuple[str, ...] = (),
+    session_id: str = "s",
 ) -> None:
-    """What the stub tmux answers the hook's read with: the pane is in `work`, holding `reasons`
-    and `task`, and two clients are elsewhere, or one of them is on `work` when `viewed`. The
-    clients in `sidebars` view a window with a sidebar."""
+    """What the stub tmux answers the hook's read with: the pane is in `work`, holding `reasons`,
+    `task` and `session_id`, by default the one `fire` sends, and two clients are elsewhere, or
+    one of them is on `work` when `viewed`. The clients in `sidebars` view a window with a
+    sidebar."""
     why = panestate.encode_reasons(reasons or {})
     clients = (("/dev/ttys001", "work" if viewed else "elsewhere"), ("/dev/ttys002", "other"))
+    task = panestate.encode_task(task)
     lines = [
-        "work\t" + state.replace(":", "\t") + f"\t{why}\t{panestate.encode_task(task)}",
+        "work\t" + state.replace(":", "\t") + f"\t{why}\t{task}\t{session_id}",
         *(f"{name}\t{'1' if name in sidebars else ''}\t{where}" for name, where in clients),
     ]
     stubs.tmux.answer("display-message", stdout="\n".join(lines) + "\n")
@@ -209,6 +212,90 @@ def test_a_mid_session_start_leaves_a_working_agent_and_its_prompts_alone(stubs,
     stored(stubs, "lead:working:a1,lead")
     fire("SessionStart", hook_event_name="SessionStart", source=source)
     assert stubs.tmux.calls() == [READ]
+
+
+def session_id(stubs) -> str | None:
+    """The session id written, None when it's unset; "no write" for no write."""
+    options = written(stubs)
+    return "no write" if options is None else options[panestate.SESSION_ID]
+
+
+ID = "3f1c9e2a-7b4d-4e0a-9c1f-2d8e6b5a4c3d"
+NEW_ID = "8b2d4f6a-1c3e-4a5b-9d7f-0e2c4a6b8d1f"
+
+
+@pytest.mark.parametrize("source", ["startup", "resume", "clear", "compact", "fork"])
+def test_a_session_start_records_its_session_id(stubs, source):
+    stored(stubs, "::", session_id="")
+    fire("SessionStart", hook_event_name="SessionStart", source=source, session_id=ID)
+    assert session_id(stubs) == ID
+
+
+@pytest.mark.parametrize(
+    ("source", "before", "expected"),
+    [
+        ("startup", "lead:working:a1", "lead:idle:"),
+        ("resume", "lead:done:", "lead:idle:"),
+        ("clear", "lead:idle:", "lead:idle:"),
+        ("fork", "lead:working:", "lead:working:"),
+    ],
+)
+def test_a_session_start_replaces_the_session_id(stubs, source, before, expected):
+    stored(stubs, before, session_id=ID)
+    fire("SessionStart", hook_event_name="SessionStart", source=source, session_id=NEW_ID)
+    assert (after(stubs), session_id(stubs)) == (expected, NEW_ID)
+
+
+EVENTS = [
+    ("UserPromptSubmit", {"prompt": "fix it"}, "lead:done:"),
+    ("PermissionRequest", {"tool_name": "Bash"}, "lead:working:"),
+    ("PostToolUse", {}, "lead:working:"),
+    ("Stop", {}, "lead:working:"),
+    ("Notification", note("idle_prompt"), "lead:done:"),
+    ("SessionEnd", {"reason": "clear"}, "lead:idle:"),
+]
+
+
+@pytest.mark.parametrize(("event", "payload", "before"), EVENTS)
+def test_the_leads_events_keep_its_session_id(stubs, event, payload, before):
+    stored(stubs, before, session_id=ID)
+    fire(event, hook_event_name=event, session_id=ID, **payload)
+    assert session_id(stubs) in (ID, "no write")
+
+
+@pytest.mark.parametrize(("event", "payload", "before"), EVENTS)
+def test_a_session_id_not_yet_stored_is_written_by_any_of_the_leads_events(
+    stubs, event, payload, before
+):
+    stored(stubs, before, session_id="")
+    fire(event, hook_event_name=event, session_id=ID, **payload)
+    assert session_id(stubs) == ID
+    assert [call[0] for call in stubs.tmux.calls()].count("set-option") == 1
+
+
+@pytest.mark.parametrize(
+    ("event", "payload"),
+    [
+        ("PermissionRequest", {"tool_name": "Bash"}),
+        ("PreToolUse", {"tool_name": "AskUserQuestion"}),
+        ("PostToolUse", {}),
+        ("SubagentStop", {}),
+        ("TeammateIdle", {}),
+        ("UserPromptSubmit", {"source": "system"}),
+    ],
+)
+@pytest.mark.parametrize("before", [ID, ""])
+def test_a_subagents_payload_never_writes_its_session_id(stubs, event, payload, before):
+    stored(stubs, "lead:working:a1,lead", session_id=before)
+    fire(event, hook_event_name=event, session_id=NEW_ID, agent_id="a2", **payload)
+    assert session_id(stubs) in (before or None, "no write")
+
+
+@pytest.mark.parametrize("value", ["a;", "a\tb", "#{pane_id}", 7, None])
+def test_a_session_id_tmux_cant_hold_as_it_is_is_never_written(stubs, value):
+    stored(stubs, "lead:done:", session_id=ID)
+    fire("UserPromptSubmit", session_id=value)
+    assert (after(stubs), session_id(stubs)) == ("lead:working:", ID)
 
 
 def test_session_end_unsets_every_option_without_reading_then_refreshes(stubs):
@@ -412,7 +499,7 @@ def test_a_missing_or_odd_field_gives_the_plain_reason(stubs, payload):
 def test_a_repeat_of_a_pending_prompt_writes_nothing(stubs, reason, payload):
     """A `Notification` repeats a `PermissionRequest`, and a permission check can follow its
     tool's `PreToolUse`: neither may swap the reason for a vaguer one or move the card."""
-    stored(stubs, "lead:working:lead", reasons={"lead": reason})
+    stored(stubs, "lead:working:lead", reasons={"lead": reason}, session_id=SESSION["session_id"])
     fire(payload["hook_event_name"], **payload)
     assert stubs.tmux.calls() == [READ]
 
@@ -755,7 +842,7 @@ def test_the_refresh_after_a_change_updates_other_sessions(stubs, played):
     stored(stubs, "lead:working:")
     stubs.tmux.answer("list-sessions", stdout="work\t\t/w\t0\t\nother\t\t/o\t0\t\n")
     stubs.tmux.answer(
-        "list-panes", stdout="work\t0\t0\t%7\tclaude\tlead\tworking\tlead\t0\tclaude\t\t\t\t\n"
+        "list-panes", stdout="work\t0\t0\t%7\tclaude\tlead\tworking\tlead\t0\tclaude\t\t\t\t\t\n"
     )
     fire("PermissionRequest")
     writes = [call for call in stubs.tmux.calls() if "@attention" in call]

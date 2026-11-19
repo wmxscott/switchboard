@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | in progress · next: release 1.4.0 |
+| **Status** | landed · 1.4.0 released |
 | **Updated** | 2026-11-19 |
 | **Tracker** | — |
 | **Related** | [design, approved 2026-11-18](../superpowers/specs/2026-11-18-sidebar-cards-design.md); [previous plan](topsnz-more-agents.md) (S12 and Stack D, the sidebar) |
@@ -380,3 +380,4 @@ There's no advisor tool in this session, so here is the strongest case against t
 - 2026-11-19: A4 landed as #31.
 - 2026-11-19: A5 landed as #32.
 - 2026-11-19: A6 landed as #33.
+- 2026-11-19: A7 landed as #34; 1.4.0 released (tap#25) and installed.

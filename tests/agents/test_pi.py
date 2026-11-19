@@ -104,6 +104,13 @@ def test_a_settled_run_in_a_session_a_client_is_viewing_goes_idle(pi):
     assert pi.after() == "lead:idle:"
 
 
+def test_pi_sends_no_session_id_so_its_pane_never_holds_one(pi):
+    pi.stored("::")
+    pi.fire("session_start", reason="startup", idle=True, session_id="s1")
+    assert pi.after() == "lead:idle:"
+    assert pi.written()[panestate.SESSION_ID] is None
+
+
 def test_quitting_ends_the_session(pi):
     pi.stored()
     pi.fire("session_shutdown", reason="quit")
