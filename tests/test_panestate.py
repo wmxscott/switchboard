@@ -60,7 +60,24 @@ def test_option_names():
         "@switchboard-reasons",
         "@switchboard-task",
         "@switchboard-card-at",
+        "@switchboard-session-id",
     )
+
+
+@pytest.mark.parametrize(
+    "value",
+    ["3f1c9e2a-7b4d-4e0a-9c1f-2d8e6b5a4c3d", "019a3c5e-8f21-7d40", "a_b.c", "x" * ps.CAP],
+)
+def test_an_id_tmux_can_hold_as_it_is_is_kept(value):
+    assert ps.session_id(value) == value
+
+
+@pytest.mark.parametrize(
+    "value",
+    ["", "a;", "a b", "a\tb", "a\nb", "#{pane_id}", "a,b", "café", "x" * (ps.CAP + 1), None, 7],
+)
+def test_any_other_id_is_dropped_never_mangled(value):
+    assert ps.session_id(value) == ""
 
 
 @pytest.mark.parametrize(

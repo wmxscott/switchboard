@@ -22,7 +22,10 @@ inside the pane, as a descendant of its process. A tool with no adapter can run 
 
 The verbs, from `switchboard.core`:
 
-    START           a new agent process: a lead, idle, with nothing pending and no task
+    START           a new agent process: a lead, idle, with nothing pending, no task and no
+                    session id
+    session(id)     record the agent's own session id, never a subagent's, for another tool to
+                    read; an id that isn't letters, digits, `_`, `.` and `-` changes nothing
     WORKING, IDLE   set the turn, keeping its task
     working(task)   set the turn working, with its task: the line of the prompt that started it
     DONE            set the turn done, or idle when a client views the session or the pane

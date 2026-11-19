@@ -150,6 +150,44 @@ def test_each_prompt_gives_its_reason(codex, event, payload, reason):
     assert codex.reasons() == {"lead": reason}
 
 
+ID = SESSION["session_id"]
+LEAD_EVENTS = [
+    ("SessionStart", {"source": "startup"}, "::", "lead:idle:"),
+    ("SessionStart", {"source": "clear"}, "lead:idle:", "lead:idle:"),
+    ("UserPromptSubmit", {"prompt": "fix it"}, "lead:done:", "lead:working:"),
+    ("PreToolUse", ASK, "lead:working:", "lead:working:lead"),
+    ("PermissionRequest", {"tool_name": "shell"}, "lead:working:", "lead:working:lead"),
+    ("PostToolUse", {}, "lead:working:", "lead:working:"),
+    ("Stop", {}, "lead:working:", "lead:done:"),
+    ("Interrupt", {}, "lead:working:", "lead:idle:"),
+    ("Interrupt", {}, "lead:done:", "lead:done:"),
+]
+
+
+@pytest.mark.parametrize(("event", "payload", "before", "expected"), LEAD_EVENTS)
+def test_the_leads_events_record_its_session_id(codex, event, payload, before, expected):
+    codex.stored(before, session_id="019a0000-0000-7000-8000-000000000000")
+    codex.fire(event, **SESSION, **payload)
+    assert codex.after() == expected
+    assert codex.written()[panestate.SESSION_ID] == ID
+
+
+@pytest.mark.parametrize(
+    ("event", "payload"),
+    [
+        ("UserPromptSubmit", {"prompt": "Explore the repo"}),
+        ("PreToolUse", ASK),
+        ("PermissionRequest", {}),
+        ("PostToolUse", {}),
+        ("SubagentStop", {}),
+    ],
+)
+def test_a_subagents_payload_never_writes_its_session_id(codex, event, payload):
+    codex.stored("lead:working:a1,lead")
+    codex.fire(event, **SESSION, **payload, **A1)
+    assert (codex.written() or {}).get(panestate.SESSION_ID) is None
+
+
 @pytest.mark.parametrize(
     ("text", "task"), [("Add a --json flag\n\nto the CLI", "Add a --json flag"), (None, "")]
 )

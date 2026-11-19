@@ -14,7 +14,7 @@ from collections import namedtuple
 from switchboard import panestate as ps
 from switchboard import run
 
-STORED = (ps.ROLE, ps.TURN, ps.PENDING, ps.REASONS, ps.TASK)
+STORED = (ps.ROLE, ps.TURN, ps.PENDING, ps.REASONS, ps.TASK, ps.SESSION_ID)
 PANE_FORMAT = "\t".join(f"#{{{name}}}" for name in ("session_name", *STORED))
 PID_FORMAT = f"{PANE_FORMAT}\t#{{pane_pid}}"
 CLIENTS = (
@@ -28,7 +28,7 @@ Verb = namedtuple("Verb", ("name", "key", "text"), defaults=("", ""))
 State = namedtuple("State", ("pane", "role", "turn", "pending"))
 View = namedtuple("View", ("session", "stored", "clients", "pid"), defaults=("",))
 Client = namedtuple("Client", ("name", "session", "sidebar"))
-Stored = tuple[str, str, str, str, str]
+Stored = tuple[str, str, str, str, str, str]
 
 START = Verb("start")
 WORKING = Verb("working")
@@ -52,6 +52,11 @@ def working(task: str = "") -> Verb:
 
 def resolve(key: str) -> Verb:
     return Verb("resolve", ps.encode_pending([key]))
+
+
+def session(value: object) -> Verb:
+    """The agent's session id; one tmux can't hold as it is changes nothing."""
+    return Verb("session", "", ps.session_id(value))
 
 
 def parse(args: list[str]) -> Verb | None:
@@ -144,9 +149,9 @@ def ancestor(pid: str) -> bool:
 
 
 def apply(stored: Stored, verbs: list[Verb], viewed: bool) -> Stored:
-    """The (role, turn, pending, reasons, task) that `verbs` make of `stored`. A pane with no
-    role is a lead, and one with no turn is idle."""
-    role, turn, pending, stored_reasons, stored_task = stored
+    """The (role, turn, pending, reasons, task, session id) that `verbs` make of `stored`. A pane
+    with no role is a lead, and one with no turn is idle."""
+    role, turn, pending, stored_reasons, stored_task, session_id = stored
     role = role if role in ps.ROLES else ps.LEAD
     turn = turn if turn in ps.TURNS else ps.IDLE
     keys = set(ps.decode_pending(pending))
@@ -155,7 +160,9 @@ def apply(stored: Stored, verbs: list[Verb], viewed: bool) -> Stored:
     for name, key, text in verbs:
         match name:
             case "start":
-                role, turn, keys, reasons, task = ps.LEAD, ps.IDLE, set(), {}, ""
+                role, turn, keys, reasons, task, session_id = ps.LEAD, ps.IDLE, set(), {}, "", ""
+            case "session" if text:
+                session_id = text
             case "teammate":
                 role = ps.TEAMMATE
             case "working":
@@ -174,7 +181,8 @@ def apply(stored: Stored, verbs: list[Verb], viewed: bool) -> Stored:
             case "resolve":
                 keys.discard(key)
     reasons = {key: reason for key, reason in reasons.items() if key in keys}
-    return role, turn, ps.encode_pending(keys), ps.encode_reasons(reasons), ps.encode_task(task)
+    encoded = ps.encode_pending(keys), ps.encode_reasons(reasons), ps.encode_task(task)
+    return role, turn, *encoded, session_id
 
 
 def raised(before: Stored, after: Stored) -> bool:
@@ -215,18 +223,19 @@ def read(pane: str, agent: str = ps.CLAUDE) -> View | None:
     fields = first.split("\t")
     if len(fields) != 1 + len(STORED) + guarded:
         return None
-    session, role, turn, pending, reasons, task, *pid = fields
+    session, role, turn, pending, reasons, task, session_id, *pid = fields
     rows = (line.split("\t", 2) for line in lines)
     clients = [Client(row[0], row[2], bool(row[1])) for row in rows if len(row) == 3]
-    return View(session, (role, turn, pending, reasons, task), clients, *pid)
+    return View(session, (role, turn, pending, reasons, task, session_id), clients, *pid)
 
 
 def write(pane: str, state: Stored, agent: str = ps.CLAUDE, card: bool = False) -> None:
     """Writes `state`, unsetting each empty option, and when `card`, the card's time."""
-    role, turn, pending, reasons, task = state
+    role, turn, pending, reasons, task, session_id = state
     now = str(int(time.time()))
     values = {ps.ROLE: role, ps.TURN: turn, ps.AT: now, ps.AGENT: agent, ps.PENDING: pending}
-    values |= {ps.REASONS: reasons, ps.TASK: task, **({ps.CARD_AT: now} if card else {})}
+    values |= {ps.REASONS: reasons, ps.TASK: task, ps.SESSION_ID: session_id}
+    values |= {ps.CARD_AT: now} if card else {}
     run.tmux(
         *(
             ("set-option", "-p", "-t", pane, name, value)

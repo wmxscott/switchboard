@@ -762,8 +762,8 @@ def test_poke_skips_dead_and_broken_endpoints_without_waiting(listener):
 
 
 def panes(stubs, *sidebars: str) -> None:
-    rows = [f"w/main\t0\t{n}\t%{n}\tfzf\t\t\t\t\t\t\t\t\t{s}\n" for n, s in enumerate(sidebars)]
-    agent = "w/main\t0\t0\t%9\tclaude\tlead\tdone\t\t0\tclaude\t\t\t\t\n"
+    rows = [f"w/main\t0\t{n}\t%{n}\tfzf\t\t\t\t\t\t\t\t\t\t{s}\n" for n, s in enumerate(sidebars)]
+    agent = "w/main\t0\t0\t%9\tclaude\tlead\tdone\t\t0\tclaude\t\t\t\t\t\n"
     stubs.tmux.answer("list-sessions", stdout="w/main\t\t/w\t0\t\nother\t\t/o\t0\t\n")
     stubs.tmux.answer("list-panes", stdout=agent + "".join(rows))
 
@@ -799,7 +799,7 @@ def test_refresh_without_a_sidebar_does_no_more(stubs, monkeypatch):
 def test_a_dead_sidebar_leaves_refresh_and_the_hook_silent(stubs):
     panes(stubs, f"{dead_port()} k", "junk")
     stubs.tmux.answer(
-        "display-message", stdout="w/main\tlead\tworking\t\t\t\n/dev/ttys001\t\telsewhere\n"
+        "display-message", stdout="w/main\tlead\tworking\t\t\t\t\n/dev/ttys001\t\telsewhere\n"
     )
     for args, stdin in ((["refresh"], ""), (["hook", "Stop"], '{"hook_event_name": "Stop"}')):
         start = time.perf_counter()

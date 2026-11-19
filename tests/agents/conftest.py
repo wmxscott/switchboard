@@ -18,7 +18,7 @@ INSIDE, OUTSIDE = 400, 999
 READ = [
     *("display-message", "-p", "-t", PANE),
     "#{session_name}\t#{@switchboard-role}\t#{@switchboard-turn}\t#{@switchboard-pending}"
-    "\t#{@switchboard-reasons}\t#{@switchboard-task}\t#{pane_pid}",
+    "\t#{@switchboard-reasons}\t#{@switchboard-task}\t#{@switchboard-session-id}\t#{pane_pid}",
     *(
         ";",
         "list-clients",
@@ -53,13 +53,15 @@ class Driver:
         inside: bool = True,
         reasons: dict[str, str] | None = None,
         task: str = "",
+        session_id: str = "",
     ):
-        """The pane is in `work`, holding `reasons` and `task`, and two clients are elsewhere, or
-        one is on `work`."""
+        """The pane is in `work`, holding `reasons`, `task` and `session_id`, and two clients are
+        elsewhere, or one is on `work`."""
         pid = INSIDE if inside else OUTSIDE
         why = panestate.encode_reasons(reasons or {})
+        task = panestate.encode_task(task)
         lines = [
-            "work\t" + state.replace(":", "\t") + f"\t{why}\t{panestate.encode_task(task)}\t{pid}",
+            "work\t" + state.replace(":", "\t") + f"\t{why}\t{task}\t{session_id}\t{pid}",
             "/dev/ttys001\t\t" + ("work" if viewed else "elsewhere"),
             "/dev/ttys002\t\tother",
         ]

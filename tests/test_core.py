@@ -20,7 +20,7 @@ from switchboard.agents import claude
 PANE = "%7"
 FORMAT = (
     "#{session_name}\t#{@switchboard-role}\t#{@switchboard-turn}\t#{@switchboard-pending}"
-    "\t#{@switchboard-reasons}\t#{@switchboard-task}"
+    "\t#{@switchboard-reasons}\t#{@switchboard-task}\t#{@switchboard-session-id}"
 )
 CLIENTS = [
     ";",
@@ -34,7 +34,7 @@ GUARDED_READ = ["display-message", "-p", "-t", PANE, f"{FORMAT}\t#{{pane_pid}}",
 
 def apply(before: str, *verbs: core.Verb, viewed: bool = False) -> str:
     role, turn, pending = before.split(":")
-    return ":".join(core.apply((role, turn, pending, "", ""), list(verbs), viewed)[:3])
+    return ":".join(core.apply((role, turn, pending, "", "", ""), list(verbs), viewed)[:3])
 
 
 @pytest.mark.parametrize(
@@ -77,12 +77,13 @@ Reasons = dict[str, str]
 def holding(reasons: Reasons, task: str = "", turn: str = "working") -> core.Stored:
     """A lead's stored state, pending `reasons`."""
     pending = panestate.encode_pending(reasons)
-    return ("lead", turn, pending, panestate.encode_reasons(reasons), panestate.encode_task(task))
+    found = panestate.encode_reasons(reasons)
+    return ("lead", turn, pending, found, panestate.encode_task(task), "s1")
 
 
 def why(reasons: Reasons, task: str, *verbs: core.Verb) -> tuple[str, Reasons, str]:
     """The pending keys, reasons and task that `verbs` make of a working lead's."""
-    _, _, pending, found, task = core.apply(holding(reasons, task), list(verbs), False)
+    _, _, pending, found, task, _ = core.apply(holding(reasons, task), list(verbs), False)
     return pending, panestate.decode_reasons(found), panestate.decode_task(task)
 
 
@@ -116,14 +117,37 @@ def test_each_verb_on_reasons_and_the_task(verbs, after):
 
 
 def test_a_pending_key_with_no_reason_stored_has_the_plain_one():
-    older = ("lead", "working", "x", "", "")
+    older = ("lead", "working", "x", "", "", "")
     assert core.apply(older, [core.needs("x")], False) == older
     assert core.apply(older, [core.needs("x", "run: ls")], False)[3] == '{"x":"run: ls"}'
 
 
 def test_reasons_never_outlive_their_keys():
-    stale = ("lead", "working", "x", panestate.encode_reasons({"x": "a", "gone": "b"}), "")
+    stale = ("lead", "working", "x", panestate.encode_reasons({"x": "a", "gone": "b"}), "", "")
     assert core.apply(stale, [], False)[3] == panestate.encode_reasons({"x": "a"})
+
+
+@pytest.mark.parametrize(
+    ("verbs", "after"),
+    [
+        ([core.session("s2")], "s2"),
+        ([core.session("s1")], "s1"),
+        ([core.session("")], "s1"),
+        ([core.session(None)], "s1"),
+        ([core.session("a;b")], "s1"),
+        ([core.START], ""),
+        ([core.START, core.session("s2")], "s2"),
+        ([core.session("s2"), core.START], ""),
+        ([core.WORKING, core.DONE, core.needs("x"), core.RESOLVE_ALL, core.TEAMMATE], "s1"),
+    ],
+)
+def test_each_verb_on_the_session_id(verbs, after):
+    assert core.apply(holding({}), verbs, False)[5] == after
+
+
+def test_a_session_id_is_cleaned_as_stored():
+    assert core.session("3f1c9e2a-7b4d") == core.Verb("session", "", "3f1c9e2a-7b4d")
+    assert core.session("a\tb") == core.session(None) == core.Verb("session", "", "")
 
 
 def test_verbs_carry_their_text_as_stored():
@@ -165,10 +189,15 @@ def test_a_turn_done_where_a_client_is_looking_moves_no_card_time():
 
 
 def stored(
-    stubs, state: str = "lead:working:", pid: int | None = None, reasons: str = "", task: str = ""
+    stubs,
+    state: str = "lead:working:",
+    pid: int | None = None,
+    reasons: str = "",
+    task: str = "",
+    session_id: str = "",
 ) -> None:
     """The pane's state, and its process id for a guarded read."""
-    first = "\t".join(["work", *state.split(":"), reasons, task])
+    first = "\t".join(["work", *state.split(":"), reasons, task, session_id])
     first += "" if pid is None else f"\t{pid}"
     lines = [first, "/dev/ttys001\t\telsewhere"]
     stubs.tmux.answer("display-message", stdout="\n".join(lines) + "\n")
@@ -234,16 +263,18 @@ def test_verbs_get_the_stored_state_and_apply_after_one_read(stubs):
 
 def test_the_read_gives_each_client_its_session_and_whether_its_window_has_a_sidebar(stubs):
     lines = [
-        "work\tlead\tidle\t\t\t",
+        "work\tlead\tidle\t\t\t\ts1",
         "/dev/ttys001\t1\tmy\tsession",
         "/dev/ttys002\t\twork",
         "junk",
     ]
     stubs.tmux.answer("display-message", stdout="\n".join(lines) + "\n")
-    assert core.read(PANE).clients == [
+    view = core.read(PANE)
+    assert view.clients == [
         ("/dev/ttys001", "my\tsession", True),
         ("/dev/ttys002", "work", False),
     ]
+    assert view.stored == ("lead", "idle", "", "", "", "s1")
     assert stubs.tmux.calls() == [READ]
 
 
@@ -288,6 +319,29 @@ def test_no_change_writes_nothing(stubs):
     stored(stubs, "lead:working:")
     core.handle(adapter([core.WORKING]), "go", {}, PANE)
     assert [call[0] for call in stubs.tmux.calls()] == ["display-message"]
+
+
+def test_a_new_session_id_alone_is_written_with_the_state_in_the_one_write(stubs):
+    stored(stubs, "lead:working:x", reasons='{"x":"run: ls"}', session_id="s1")
+    core.perform(PANE, [core.session("s2")])
+    options = written(stubs)
+    assert options[panestate.SESSION_ID] == "s2"
+    assert (after(stubs), options[panestate.REASONS]) == ("lead:working:x", '{"x":"run: ls"}')
+    assert panestate.CARD_AT not in options
+    calls = [call[0] for call in stubs.tmux.calls()]
+    assert calls == ["display-message", "set-option", "list-sessions"]
+
+
+def test_the_same_session_id_writes_nothing(stubs):
+    stored(stubs, "lead:working:", session_id="s1")
+    core.perform(PANE, [core.session("s1"), core.WORKING])
+    assert [call[0] for call in stubs.tmux.calls()] == ["display-message"]
+
+
+def test_a_write_with_no_session_id_unsets_it(stubs):
+    stored(stubs, "lead:working:", session_id="s1")
+    core.perform(PANE, [core.START])
+    assert written(stubs)[panestate.SESSION_ID] is None
 
 
 def test_early_nothing_never_calls_tmux(stubs):

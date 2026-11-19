@@ -17,8 +17,9 @@ PANES_FORMAT = (
     "#{session_name}\t#{window_index}\t#{pane_index}\t#{pane_id}\t#{pane_current_command}"
     "\t#{@switchboard-role}\t#{@switchboard-turn}\t#{@switchboard-pending}\t#{@switchboard-at}"
     "\t#{@switchboard-agent}\t#{@switchboard-reasons}\t#{@switchboard-task}"
-    "\t#{@switchboard-card-at}\t#{@switchboard-sidebar}"
+    "\t#{@switchboard-card-at}\t#{@switchboard-session-id}\t#{@switchboard-sidebar}"
 )
+ID = "3f1c9e2a-7b4d-4e0a-9c1f-2d8e6b5a4c3d"
 
 
 def test_sessions_is_one_list_sessions_query(stubs):
@@ -39,11 +40,11 @@ def test_panes_is_one_list_panes_query(stubs):
     stubs.tmux.answer(
         "list-panes",
         stdout="a\t0\t0\t%0\tclaude\tlead\tworking\tlead,a1\t1763500000\tclaude"
-        '\t{"lead":"run: ls","a1":""}\t"fix it; now"\t1763499000\t\n'
-        "a\t1\t0\t%1\tzsh\t\t\t\t\t\t\t\t\t\n"
-        "b\t2\t0\t%2\tpi\tlead\tidle\t\t\tpi\t\t\t\t\n"
-        "b\t2\t1\t%3\tclaude\tteammate\tidle\t\t\t\tgarbage\t{\tsoon\t\n"
-        "b\t4\t0\t%4\tfzf\t\t\t\t\t\t\t\t\t53122 k3y\n",
+        f'\t{{"lead":"run: ls","a1":""}}\t"fix it; now"\t1763499000\t{ID}\t\n'
+        "a\t1\t0\t%1\tzsh\t\t\t\t\t\t\t\t\t\t\n"
+        "b\t2\t0\t%2\tpi\tlead\tidle\t\t\tpi\t\t\t\t\t\n"
+        "b\t2\t1\t%3\tclaude\tteammate\tidle\t\t\t\tgarbage\t{\tsoon\t\t\n"
+        "b\t4\t0\t%4\tfzf\t\t\t\t\t\t\t\t\t\t53122 k3y\n",
     )
     panes = tmux.panes()
     reasons = (("lead", "run: ls"), ("a1", ""))
@@ -51,6 +52,7 @@ def test_panes_is_one_list_panes_query(stubs):
         Pane(
             *("a", 0, "%0", "claude", "lead", "working", ("lead", "a1"), 1763500000, "claude"),
             *(reasons, "fix it; now", 1763499000),
+            session_id=ID,
         ),
         Pane("a", 1, "%1", "zsh"),
         Pane("b", 2, "%2", "pi", "lead", "idle", agent="pi"),
@@ -73,10 +75,10 @@ def test_an_unknown_role_is_not_an_agent():
 
 def test_agents_by_session_keeps_only_agents_in_pane_order():
     panes = tmux.parse_panes(
-        "a\t0\t0\t%0\tzsh\t\t\t\t\t\t\t\t\t\n"
-        "a\t1\t0\t%3\tclaude\tteammate\tdone\t\t\t\t\t\t\t\n"
-        "b\t0\t0\t%1\tclaude\tlead\tidle\t\t\t\t\t\t\t\n"
-        "a\t2\t0\t%2\tclaude\tlead\tworking\t\t\t\t\t\t\t\n"
+        "a\t0\t0\t%0\tzsh\t\t\t\t\t\t\t\t\t\t\n"
+        "a\t1\t0\t%3\tclaude\tteammate\tdone\t\t\t\t\t\t\t\t\n"
+        "b\t0\t0\t%1\tclaude\tlead\tidle\t\t\t\t\t\t\t\t\n"
+        "a\t2\t0\t%2\tclaude\tlead\tworking\t\t\t\t\t\t\t\t\n"
     )
     found = tmux.agents_by_session(panes)
     assert {name: [p.id for p in agents] for name, agents in found.items()} == {

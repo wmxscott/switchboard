@@ -39,6 +39,7 @@ def verbs(event: str, payload: dict, state: core.State, teams: bool = True) -> l
     fresh = event == "SessionStart" and payload.get("source") in NEW_CLAUDE
     agent = key(payload)
     found = [core.START] if fresh else []
+    found += session(payload)
     if teams and _teammate(event, agent, "" if fresh else state.role, state.pane):
         found.append(core.TEAMMATE)
     if event == "UserPromptSubmit":
@@ -140,6 +141,11 @@ def key(payload: dict) -> str:
     """The pending-prompt key of the event's agent: a subagent's id, else `lead`."""
     agent = payload.get("agent_id")
     return (isinstance(agent, str) and ps.encode_pending([agent])) or ps.LEAD_KEY
+
+
+def session(payload: dict) -> list[core.Verb]:
+    """The event's session id, unless a subagent sent it: a subagent's can be its own."""
+    return [core.session(payload.get("session_id"))] if key(payload) == ps.LEAD_KEY else []
 
 
 def _alive(lead: object) -> bool:

@@ -38,10 +38,11 @@ def early(event: str, payload: dict) -> list[core.Verb] | None:
 def verbs(event: str, payload: dict, state: core.State) -> list[core.Verb]:
     agent = claude.key(payload)
     if event == "Interrupt":
-        return [core.resolve(ps.LEAD_KEY), *([core.IDLE] if state.turn == ps.WORKING else [])]
+        idle = [core.IDLE] if state.turn == ps.WORKING else []
+        return [*claude.session(payload), core.resolve(ps.LEAD_KEY), *idle]
     if event == "UserPromptSubmit" and agent != ps.LEAD_KEY:
         # A subagent got its task: no one typed anything.
         return [core.resolve(agent)]
     if event == "PreToolUse":
-        return [core.needs(agent, claude.asks(payload))]
+        return [*claude.session(payload), core.needs(agent, claude.asks(payload))]
     return claude.verbs(event, payload, state, teams=False)
