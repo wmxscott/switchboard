@@ -52,7 +52,9 @@ def verbs(event: str, payload: dict, state: core.State, teams: bool = True) -> l
         found.append(core.needs(agent, reason(payload)))
     elif event == "Notification":
         if payload.get("notification_type") == "idle_prompt":
-            found += [core.IDLE] if state.turn == ps.WORKING else []
+            # Sent only with nothing loading and no dialog on screen: a dismissed or interrupted
+            # prompt fires no other event.
+            found += [core.RESOLVE_ALL, *([core.IDLE] if state.turn == ps.WORKING else [])]
         elif not state.pending:
             # Names no agent, and repeats a PermissionRequest seconds later.
             found.append(core.needs(agent, _text(payload.get("message"))))

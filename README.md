@@ -115,7 +115,7 @@ An agent in another session that needs you or is done gets a card at the bottom 
 - **The order** is oldest at the top and newest at the bottom. A needs-you card dates from its agent's latest prompt, and a done card from when its turn ended.
 - **When a card goes:** it follows its agent's state, and there's no dismissing it. A needs-you card goes once you answer and the agent carries on, and a done card once you visit its session. With Claude Code, two cases keep a needs-you card, as they keep ▲:
   - a slow command you've approved keeps it until the command ends (see [why](#a-slow-approved-command));
-  - a prompt you've rejected or interrupted keeps it until your next typed prompt.
+  - a prompt you've rejected or interrupted keeps it until your next typed prompt, or until Claude Code's idle notification, which it sends after about a minute at its prompt with no dialog open.
 
 The second line, by agent and event:
 
@@ -204,7 +204,7 @@ After you approve a slow command, such as a test run or a build, ▲ stays until
 
 To soften this, your status bar never lists the session you're in, and a sidebar shows no cards for its own session. While you watch the build, nothing shows for it. ▲ only appears if you switch away before it ends. With several clients, each one's status bar leaves out its own session.
 
-Interrupting a turn sends no event either, so the agent shows working until Claude Code's idle notification turns it idle.
+Interrupting a turn sends no event either, so the agent shows working until Claude Code's idle notification turns it idle. The same notification clears a question or permission prompt you dismissed: Claude Code sends it only when nothing is loading and no dialog is on screen.
 
 ## Requirements
 
