@@ -68,7 +68,7 @@ tab fold · ↵ switch
 │   notes
 ```
 
-`prefix b` opens it in a 32-column pane on the left of the current window, and closes it again. The focus stays where it was.
+`prefix b` opens it in a 32-column pane down the left edge of the current window, full height, whichever pane you're in. Pressed again, it closes it, and the other panes get back the widths it took. The focus stays where it was.
 
 - **It shows** the picker's list, compact: repo headers, and worktree rows with their state dot. Agents fold into the dot. There are no counts, no git status and no preview, and long names are cut short with `…`.
 - **A folded repo** shows the dot of its most urgent state after its name, so a fold never hides a session that needs you. An open repo's header has no dot.
@@ -76,7 +76,7 @@ tab fold · ↵ switch
 - **Enter switches** the client viewing the sidebar to the highlighted session. The sidebar stays in its window: it doesn't follow you to the other session.
 - **It redraws live.** Every state change, every switch of session, and every `switchboard refresh` asks each open sidebar to reload. So does each session created or closed, with the hooks in [tmux setup](#tmux-setup). There's no polling.
 
-Each sidebar's fzf listens on a local port, which it records with a random key in its pane's `@switchboard-sidebar` option. That option is also how `prefix b` finds the window's sidebar. A pane it has just opened holds `starting` until fzf records its port.
+Each sidebar's fzf listens on a local port, which it records with a random key in its pane's `@switchboard-sidebar` option. That option is also how `prefix b` finds the window's sidebar. A pane it has just opened holds `starting` until fzf records its port, and keeps the window's layout from before it in `@switchboard-layout`. If you split or close a pane while the sidebar is open, that layout no longer fits, and closing the sidebar leaves the widths as they are.
 
 ### The binding
 
@@ -310,7 +310,7 @@ The limits:
 | `switchboard seen [session]` | Turn a session's done agents idle, then refresh. By default, the current session |
 | `switchboard refresh` | Rebuild every session's `@attention`, and redraw every open sidebar |
 | `switchboard sidebar` | Show [the sidebar](#the-sidebar) in this pane, until Ctrl-C |
-| `switchboard sidebar --toggle [PANE]` | Close the sidebar in `PANE`'s window, or open one on its left. By default, this pane. It prints nothing unless it fails |
+| `switchboard sidebar --toggle [PANE]` | Close the sidebar in `PANE`'s window, or open one down the window's left edge. By default, this pane. It prints nothing unless it fails |
 
 Outside tmux, the picker and both sidebar commands exit 1 with a message. Every other command exits 0 and does nothing, and `state` still checks its arguments.
 
