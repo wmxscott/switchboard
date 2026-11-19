@@ -14,7 +14,7 @@ from switchboard import attention
 from switchboard.panestate import DONE, IDLE, NEEDS, WORKING
 
 SCRIPT = os.path.join(os.path.dirname(sys.executable), "switchboard")
-Y, G, H = "#[fg=themeyellow]", "#[fg=themegreen]", "#[fg=themelightgrey]"
+R, G, H = "#[fg=themered]", "#[fg=themegreen]", "#[fg=themelightgrey]"
 END = "#[default] "
 
 
@@ -80,14 +80,14 @@ def test_names_need_you_first_then_done_each_in_order():
         "eps": [],
     }
     assert attention.render(states, "delta") == (
-        f"{Y}▲ beta  {Y}▲ zeta  {G}✓ done/a  {G}✓ Done/b{END}"
+        f"{R}▲ beta  {R}▲ zeta  {G}✓ done/a  {G}✓ Done/b{END}"
     )
 
 
 def test_your_own_session_is_left_out():
     states = {"mine": [NEEDS, NEEDS], "theirs": [DONE]}
     assert attention.render(states, "mine") == f"{G}✓ theirs{END}"
-    assert attention.render(states, "theirs") == f"{Y}▲² mine{END}"
+    assert attention.render(states, "theirs") == f"{R}▲² mine{END}"
     assert attention.render({"mine": [DONE]}, "mine") == ""
 
 
@@ -99,14 +99,14 @@ def test_nothing_to_show_is_empty():
 @pytest.mark.parametrize(
     ("agents", "value"),
     [
-        ([NEEDS], f"{Y}▲ w{END}"),
-        ([WORKING, NEEDS, IDLE], f"{Y}▲ w{END}"),
+        ([NEEDS], f"{R}▲ w{END}"),
+        ([WORKING, NEEDS, IDLE], f"{R}▲ w{END}"),
         ([DONE, IDLE], f"{G}✓ w{END}"),
-        ([NEEDS] * 3, f"{Y}▲³ w{END}"),
-        ([NEEDS, DONE, NEEDS], f"{Y}▲²{G}✓{Y} w{END}"),
+        ([NEEDS] * 3, f"{R}▲³ w{END}"),
+        ([NEEDS, DONE, NEEDS], f"{R}▲²{G}✓{R} w{END}"),
         ([DONE, WORKING, DONE], f"{G}✓² w{END}"),
-        ([DONE, NEEDS], f"{Y}▲{G}✓{Y} w{END}"),
-        ([NEEDS, DONE, DONE], f"{Y}▲{G}✓²{Y} w{END}"),
+        ([DONE, NEEDS], f"{R}▲{G}✓{R} w{END}"),
+        ([NEEDS, DONE, DONE], f"{R}▲{G}✓²{R} w{END}"),
     ],
 )
 def test_a_mark_per_state_present_counted_past_one_agent(agents, value):
@@ -116,16 +116,16 @@ def test_a_mark_per_state_present_counted_past_one_agent(agents, value):
 def test_each_mark_keeps_its_colour_and_the_name_its_groups():
     value = attention.render({"w": [DONE] * 12 + [NEEDS] * 10}, "elsewhere")
     assert re.findall(r"#\[fg=(\w+)\]([^#]*)", value) == [
-        ("themeyellow", "▲¹⁰"),
+        ("themered", "▲¹⁰"),
         ("themegreen", "✓¹²"),
-        ("themeyellow", " w"),
+        ("themered", " w"),
     ]
     assert plain(value) == "▲¹⁰✓¹² w "
 
 
 def test_a_session_with_any_agent_needing_you_sits_with_need_you():
     states = {"a": [DONE], "b": [DONE, DONE, NEEDS], "c": [NEEDS], "d": [DONE, WORKING]}
-    assert attention.render(states, "x") == (f"{Y}▲{G}✓²{Y} b  {Y}▲ c  {G}✓ a  {G}✓ d{END}")
+    assert attention.render(states, "x") == (f"{R}▲{G}✓²{R} b  {R}▲ c  {G}✓ a  {G}✓ d{END}")
 
 
 def test_past_the_budget_names_become_counts_of_sessions():
@@ -133,17 +133,17 @@ def test_past_the_budget_names_become_counts_of_sessions():
     states |= {"repo/needs-3": [NEEDS, DONE]}
     states |= {f"repo/done-{n}": [DONE] * 3 for n in range(3)}
     value = attention.render(states, "elsewhere")
-    assert value == f"{Y}▲ 4 need you  {G}✓ 3 done  {H}prefix w{END}"
+    assert value == f"{R}▲ 4 need you  {G}✓ 3 done  {H}prefix w{END}"
     assert plain(value) == "▲ 4 need you  ✓ 3 done  prefix w "
 
 
 @pytest.mark.parametrize(
     ("states", "names"),
     [
-        ({"n" * 58: [NEEDS]}, f"{Y}▲ {'n' * 58}{END}"),
-        ({"n" * 27: [NEEDS], "d" * 27: [DONE]}, f"{Y}▲ {'n' * 27}  {G}✓ {'d' * 27}{END}"),
-        ({"n" * 55: [NEEDS] * 10 + [DONE]}, f"{Y}▲¹⁰{G}✓{Y} {'n' * 55}{END}"),
-        ({"n" * 26: [NEEDS] * 2, "d" * 26: [DONE] * 3}, f"{Y}▲² {'n' * 26}  {G}✓³ {'d' * 26}{END}"),
+        ({"n" * 58: [NEEDS]}, f"{R}▲ {'n' * 58}{END}"),
+        ({"n" * 27: [NEEDS], "d" * 27: [DONE]}, f"{R}▲ {'n' * 27}  {G}✓ {'d' * 27}{END}"),
+        ({"n" * 55: [NEEDS] * 10 + [DONE]}, f"{R}▲¹⁰{G}✓{R} {'n' * 55}{END}"),
+        ({"n" * 26: [NEEDS] * 2, "d" * 26: [DONE] * 3}, f"{R}▲² {'n' * 26}  {G}✓³ {'d' * 26}{END}"),
     ],
 )
 def test_names_fill_the_budget_exactly_and_one_more_column_is_counts(states, names):
@@ -171,8 +171,8 @@ def test_counts_show_only_the_kinds_present(state, text):
 
 
 def test_a_hash_in_a_name_is_escaped():
-    assert attention.render({"fix#[1]": [NEEDS]}, "x") == f"{Y}▲ fix##[1]{END}"
-    assert attention.render({"fix#[1]": [NEEDS, DONE]}, "x") == f"{Y}▲{G}✓{Y} fix##[1]{END}"
+    assert attention.render({"fix#[1]": [NEEDS]}, "x") == f"{R}▲ fix##[1]{END}"
+    assert attention.render({"fix#[1]": [NEEDS, DONE]}, "x") == f"{R}▲{G}✓{R} fix##[1]{END}"
 
 
 def test_refresh_writes_each_sessions_own_value_in_one_call(stubs):
@@ -188,9 +188,9 @@ def test_refresh_writes_each_sessions_own_value_in_one_call(stubs):
     attention.refresh()
     assert written(stubs) == {
         "build": f"{G}✓ docs{END}",
-        "docs": f"{Y}▲² build{END}",
-        "main": f"{Y}▲² build  {G}✓ docs{END}",
-        "scratch": f"{Y}▲² build  {G}✓ docs{END}",
+        "docs": f"{R}▲² build{END}",
+        "main": f"{R}▲² build  {G}✓ docs{END}",
+        "scratch": f"{R}▲² build  {G}✓ docs{END}",
     }
     assert [call[0] for call in stubs.tmux.calls()] == ["list-sessions", "list-panes", "set-option"]
 
@@ -207,11 +207,11 @@ def test_refresh_counts_agents_by_their_displayed_state(stubs):
         "here:%6:lead:idle:",
     )
     attention.refresh()
-    assert written(stubs) == {"here": f"{Y}▲²{G}✓²{Y} work{END}"}
+    assert written(stubs) == {"here": f"{R}▲²{G}✓²{R} work{END}"}
 
 
 def test_refresh_writes_only_what_changed(stubs):
-    sessions(stubs, "a", "b", "c", a=f"{G}✓ b{END}", b=f"{Y}▲ gone{END}", c=f"{G}✓ b{END}")
+    sessions(stubs, "a", "b", "c", a=f"{G}✓ b{END}", b=f"{R}▲ gone{END}", c=f"{G}✓ b{END}")
     panes(stubs, "b:%1:lead:done:")
     attention.refresh()
     assert written(stubs) == {"b": ""}
@@ -220,8 +220,8 @@ def test_refresh_writes_only_what_changed(stubs):
 @pytest.mark.parametrize(
     ("value", "rows"),
     [
-        (f"{Y}▲ b{END}", ["b:%1:lead:idle:lead"]),
-        (f"{Y}▲²{G}✓{Y} b{END}", ["b:%1:lead:idle:lead", "b:%2:lead:done:a1", "b:%3:lead:done:"]),
+        (f"{R}▲ b{END}", ["b:%1:lead:idle:lead"]),
+        (f"{R}▲²{G}✓{R} b{END}", ["b:%1:lead:idle:lead", "b:%2:lead:done:a1", "b:%3:lead:done:"]),
     ],
 )
 def test_refresh_writes_nothing_when_nothing_changed(stubs, value, rows):
@@ -269,7 +269,7 @@ def test_seen_turns_done_idle_but_leaves_needs_you(stubs):
     for values in options.values():
         assert set(values) == {"@switchboard-turn", "@switchboard-at"}
         assert abs(int(values["@switchboard-at"]) - time.time()) < 60
-    assert written(stubs) == {"work": f"{G}✓ other{END}", "other": f"{Y}▲² work{END}"}
+    assert written(stubs) == {"work": f"{G}✓ other{END}", "other": f"{R}▲² work{END}"}
 
 
 def test_seen_with_nothing_done_only_refreshes(stubs):

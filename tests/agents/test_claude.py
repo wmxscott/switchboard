@@ -504,7 +504,7 @@ def test_the_refresh_after_a_change_updates_other_sessions(stubs, played):
     fire("PermissionRequest")
     writes = [call for call in stubs.tmux.calls() if "@attention" in call]
     assert writes == [
-        ["set-option", "-t", "=other:", "@attention", "#[fg=themeyellow]▲ work#[default] "]
+        ["set-option", "-t", "=other:", "@attention", "#[fg=themered]▲ work#[default] "]
     ]
 
 
