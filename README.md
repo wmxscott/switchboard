@@ -7,9 +7,9 @@ A keyboard-only tmux session switcher for people who run coding agents in tmux: 
 There are five pieces:
 
 - **The picker.** One key opens it in a popup. It lists every session as repo → worktree → agents, with each agent's state, and previews the highlighted session. `j`/`k` and Enter switch, and `q` closes. No mouse.
-- **The sidebar.** Another key opens the picker's list, compact, in a narrow pane on the left of the window. It stays open and redraws itself as states change.
-- **The status-bar segment.** It names the other sessions whose agents need you or are done.
-- **The alert.** A tmux message on every client and a short sound, when an agent in a session no one is looking at needs you or finishes.
+- **The sidebar.** Another key opens the picker's list, compact, in a narrow pane on the left of the window. It stays open and redraws itself as states change. Under the list, a card for each agent elsewhere that needs you or is done says why, and Enter on it lands on that agent's pane.
+- **The status-bar segment.** It names the other sessions whose agents need you or are done. It hides in a window with a sidebar, whose cards stand in for it.
+- **The alert.** A tmux message on every client whose window has no sidebar, and a short sound, when an agent in a session no one is looking at needs you or finishes.
 - **The hook.** Each agent runs `switchboard hook [--agent NAME] <event>` on its events, and that keeps its state up to date. Claude Code and Codex run it from their hooks, and Pi from an extension. Other agents can be [added](#adding-an-agent).
 
 State lives in tmux pane options on each agent's pane. There's no daemon, no polling and no state file.
@@ -62,7 +62,7 @@ Picking a session lands on one of its agents' panes, every time, even when nothi
 2. **On a tie,** the lead before a teammate.
 3. **Then** the lowest window, then the lowest pane in it.
 
-- **An agent row** lands on that agent's pane.
+- **An agent row**, or a sidebar's [card](#cards), lands on that agent's pane.
 - **A session with no agents** switches to it as before, onto the window it was on.
 - **A pane that has closed** since the list was drawn, as when its agent exits, switches to its session instead.
 - **The sidebar** lands the same way.
@@ -80,13 +80,81 @@ Picking a session lands on one of its agents' panes, every time, even when nothi
 
 `prefix b` opens it in a 32-column pane down the left edge of the current window, full height, whichever pane you're in. Pressed again, it closes it, and the other panes get back the widths it took. The focus stays where it was.
 
-- **It shows** the picker's list, compact: repo headers, and worktree rows with their state dot. Agents fold into the dot. There are no counts, no git status and no preview, and long names are cut short with `…`.
+- **It shows** the picker's list, compact: repo headers, and worktree rows with their state dot. Agents fold into the dot. There are no counts, no git status and no preview, and long names are cut short with `…`. Any [cards](#cards) go under the list.
 - **A folded repo** shows the dot of its most urgent state after its name, so a fold never hides a session that needs you. An open repo's header has no dot.
-- **The keys** are the picker's: `j`/`k`, `/` to search, Tab to fold, and Enter or a double click to switch. Nothing in the sidebar closes it: `q` does nothing, and Esc only leaves a search. Close it with `prefix b` again, or Ctrl-C.
+- **The keys** are the picker's: `j`/`k`, `/` to search, Tab to fold, and Enter or a double click to switch. `G` jumps to the newest card, or to the last row when there are none, and `g` to the top. While searching, `g` and `G` type letters, as `j` and `k` do. Nothing in the sidebar closes it: `q` does nothing, and Esc only leaves a search. Close it with `prefix b` again, or Ctrl-C.
 - **Enter switches** the client viewing the sidebar to the highlighted session, onto its agent's pane as in [the picker](#where-enter-lands). The sidebar stays in its window: it doesn't follow you to the other session, or to another window of its own.
-- **It redraws live.** Every state change, every switch of session, and every `switchboard refresh` asks each open sidebar to reload. So does each session created or closed, with the hooks in [tmux setup](#tmux-setup). There's no polling.
+- **It redraws live.** Every state change, every switch of session, and every `switchboard refresh` asks each open sidebar to reload. So does each session created or closed, with the hooks in [tmux setup](#tmux-setup). There's no polling. A redraw never moves the cursor off its row or card.
 
 Each sidebar's fzf listens on a local port, which it records with a random key in its pane's `@switchboard-sidebar` option. That option is also how `prefix b` finds the window's sidebar. A pane it has just opened holds `starting` until fzf records its port, and keeps the window's layout from before it in `@switchboard-layout`. If you split or close a pane while the sidebar is open, that layout no longer fits, and closing the sidebar leaves the widths as they are.
+
+### Cards
+
+```
+▸ gadget ●
+▾ widget
+│ ◉ main       ●
+│   fix-login  ●
+▾ other
+│   notes
+
+
+─────────────────────────────
+✓ gadget/main · codex
+  done: refactor the parser
+▲ widget/fix-login · claude
+  asks: keep the old API?
+```
+
+An agent in another session that needs you or is done gets a card at the bottom of the sidebar. It says which agent, and why it needs you or what it finished.
+
+- **Which agents:** each one that needs you (▲) or is done (✓). Working and idle agents get none, and neither does any agent in the sidebar's own session, as the status bar never names your own session. A teammate gets a card only when it needs you, since teammates never become done.
+- **The first line** is the mark, the agent's session, and its label: `claude`, `codex`, `pi` or `teammate`. When one agent has several prompts waiting, the mark counts them, as in `▲²`.
+- **The second line** says why, as in the table below. With several prompts waiting, it's the newest one's reason.
+- **Both lines** are cut to the sidebar's width with `…`.
+- **The order** is oldest at the top and newest at the bottom. A needs-you card dates from its agent's latest prompt, and a done card from when its turn ended.
+- **When a card goes:** it follows its agent's state, and there's no dismissing it. A needs-you card goes once you answer and the agent carries on, and a done card once you visit its session. With Claude Code, two cases keep a needs-you card, as they keep ▲:
+  - a slow command you've approved keeps it until the command ends (see [why](#a-slow-approved-command));
+  - a prompt you've rejected or interrupted keeps it until your next typed prompt.
+
+The second line, by agent and event:
+
+| Agent | Event | Second line |
+|---|---|---|
+| Claude Code | `PermissionRequest` for Bash | `run: <command>` |
+| Claude Code | `PermissionRequest` for a tool with a `file_path`, such as Edit | `<verb>: <path>`, as in `edit: src/app.py`. The verb is `edit`, `write` or `read`, else the tool's name in lower case. The path is relative to the agent's folder when it's inside it |
+| Claude Code | `PermissionRequest` for any other tool | The tool's name, such as `WebFetch` |
+| Claude Code | `PreToolUse` for `AskUserQuestion` | `asks: <first question>` |
+| Claude Code | `PreToolUse` for `ExitPlanMode` | `plan ready for review` |
+| Claude Code | `Notification` of a permission prompt or an MCP server asking for input, when nothing else is waiting | Its message |
+| Codex | `PermissionRequest` | As Claude Code's |
+| Codex | `PreToolUse` for `request_user_input` | `asks: <first question>` |
+| Pi | `ui_prompt_start` | The dialog's title, else its kind |
+| Pi | `plannotator_opened` | `plan ready for review` |
+| Any | A turn ends done | `done: <task>`, else `done` |
+| Any | Needs you, with no reason given | `needs you` |
+
+- **The task** is the first line of the prompt you last typed, from Claude Code's and Codex's `UserPromptSubmit`, and Pi's `input`.
+- **Pi's** dialog title and task come from the [ai-toolkit](https://github.com/wmxscott/ai-toolkit) extension, which sends `title` with `ui_prompt_start` and forwards `input`. With an older extension, a dialog's card shows only its kind, and a done card says `done`.
+- **Each reason and task** is kept as one line of at most 200 characters, and cut to fit only when it's drawn.
+- **A reason can hold a secret.** A card can show a command line as the agent sent it, tokens and passwords included. It's kept in a pane option, which only your own tmux server can read, and shown only on your own screen, where the agent's prompt already shows it.
+
+The layout:
+
+- **With no cards,** the sidebar is just the list.
+- **With cards,** an empty gap under the list pushes a rule and the cards down to the pane's last rows. It fits them again when the pane resizes.
+- **When they don't all fit** under the list, the oldest fold into one `+N more` line at the top of the stack, and the newest always shows. Enter on `+N more` does nothing.
+- **When the list fills the pane,** there's no gap, and all but the newest card fold. The list and the cards scroll together, and `G` reaches the newest.
+
+The keys:
+
+- **`G`** jumps to the newest card, and **`g`** to the top of the list.
+- **`j` and `k`** step over the gap, so `j` on the list's last row goes straight to the cards, and `k` comes back.
+- **Enter**, or a double click, on a card lands on its agent's pane, as an agent row does in [the picker](#where-enter-lands). If the pane has closed, it switches to the session.
+- **`/`** searches the cards as well as the list.
+- **The cursor stays on its row or card** when a card comes or goes. If its own card goes, it moves to the card that takes its place, else the one above, else the list's last row.
+
+**The cards stand in** for the [status-bar segment](#tmux-setup) and the alert's message. A client whose current window has a sidebar shows no segment, `prefix w` hint included, and gets no message. The sound still plays. Close the sidebar, or go to a window without one, and the segment comes back.
 
 ### The binding
 
@@ -132,9 +200,9 @@ In the picker, green means finished and a filled dot means you haven't seen it y
 
 ### A slow approved command
 
-After you approve a slow command, such as a test run or a build, ▲ stays until the command finishes. Claude Code sends no event between your approval and the end of the tool, so switchboard can't tell that you've answered.
+After you approve a slow command, such as a test run or a build, ▲ stays until the command finishes, and so does its [card](#cards). Claude Code sends no event between your approval and the end of the tool, so switchboard can't tell that you've answered.
 
-To soften this, your status bar never lists the session you're in. While you watch the build, nothing shows for it. ▲ only appears if you switch away before it ends. With several clients, each one's status bar leaves out its own session.
+To soften this, your status bar never lists the session you're in, and a sidebar shows no cards for its own session. While you watch the build, nothing shows for it. ▲ only appears if you switch away before it ends. With several clients, each one's status bar leaves out its own session.
 
 Interrupting a turn sends no event either, so the agent shows working until Claude Code's idle notification turns it idle.
 
@@ -199,6 +267,7 @@ The segment names sessions, needs you first, then done:
 - **Each session** sits in the group of its most urgent agent, with a mark for each state its agents are in. Here, two agents in `widget/fix-login` need you and a third is done.
 - **A superscript** counts the agents in that state, when there's more than one. A single agent shows a bare mark.
 - **When the names don't fit** in about 60 columns, counts included, it switches to counting sessions: `▲ 4 need you  ✓ 3 done  prefix w`.
+- **Where a sidebar is open,** the segment hides, `prefix w` hint included: a client whose current window has a sidebar shows none, since the sidebar's [cards](#cards) stand in for it. switchboard builds this into `@attention`, so your config needs nothing more.
 
 ## Claude Code setup
 
@@ -298,6 +367,7 @@ The extension sends each event to `switchboard hook --agent pi <event>`, with th
 | Event | State |
 |---|---|
 | `session_start` | Idle, or working if a run is going |
+| `input` | No change: its first line is the task a [done card](#cards) shows |
 | `agent_start` | Working |
 | `ui_prompt_start`, `ui_prompt_end` | Needs you while an extension's dialog is open |
 | `plannotator_opened`, `plannotator_closed` | Needs you while a Plannotator review is open |
@@ -401,7 +471,7 @@ The verbs, from `switchboard.core`:
 | `TEAMMATE` | Mark the pane an agent-team teammate |
 | `END` | The agent has gone: unset every `@switchboard-*` option |
 
-**Reasons and the task.** An agent's card says why it needs you, such as `run: npm test`, or what it finished, from its task. The adapter gives both, from the event's payload: a reason with `needs(key, reason)`, and the prompt's first line with `working(task)`. Pass the text as it comes, and switchboard makes it one line and caps it. Pass `""` when a field is missing or isn't a string, so a renamed field gives a plain card, `needs you` or `done`, and never an error. The same reason again for a pending key changes nothing, but a new one replaces it and counts as a new prompt, so a repeated event mustn't swap a reason for a vaguer one.
+**Reasons and the task.** An agent's card says why it needs you, such as `run: npm test`, or what it finished, from its task. The adapter gives both, from the event's payload: a reason with `needs(key, reason)`, and the prompt's first line with `working(task)`. Pass the text as it comes, and switchboard makes it one line and caps it. Pass `""` when a field is missing or isn't a string, so a renamed field gives a plain card, `needs you` or `done`, and never an error. The same reason again for a pending key changes nothing, but a new one replaces it and counts as a new prompt, so a repeated event mustn't swap a reason for a vaguer one. Without an adapter, `switchboard state` takes them as [`--reason` and `--task`](#without-an-adapter).
 
 For example, `src/switchboard/agents/acme.py`, for an agent whose plugin sends `start`, `prompt`, `ask`, `answer`, `stop` and `exit`:
 
@@ -503,12 +573,13 @@ Cover every event the adapter handles, the events it drops, and an event from ou
 A script, or a tool that knows its own state at each point, can skip the adapter and set the state from its pane:
 
 ```sh
-switchboard state working --agent build
+switchboard state working --task 'make test' --agent build
 make test
 switchboard state done --agent build
 ```
 
-- **The verbs** are `start`, `working`, `done`, `idle`, `needs KEY`, `resolve KEY`, `resolve all` and `end`, as above. `end` stops tracking the pane.
+- **The verbs** are `start`, `working [--task TEXT]`, `done`, `idle`, `needs KEY [--reason TEXT]`, `resolve KEY`, `resolve all` and `end`, as above. `end` stops tracking the pane.
+- **`--reason` and `--task`** give a [card](#cards) its second line. `--reason` says why the pane needs you, as in `needs lead --reason 'deploy to prod?'`, and `--task` is what a done card shows, here `done: make test`. Each goes right after its verb, and its key for `needs`, with its text as one argument. Without them, a card says `needs you` or `done`.
 - **`--agent`** labels the pane in the picker. Without it, the label is `claude`. Any other name turns on the pane guard, so run `state` from inside the pane.
 - **The contract** is the hook's: it never prints and always exits 0 at runtime. Only malformed arguments exit 2, with one line on stderr.
 

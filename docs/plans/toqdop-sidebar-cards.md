@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | in progress · next: A4 |
+| **Status** | in progress · next: release 1.4.0 |
 | **Updated** | 2026-11-19 |
 | **Tracker** | — |
 | **Related** | [design, approved 2026-11-18](../superpowers/specs/2026-11-18-sidebar-cards-design.md); [previous plan](topsnz-more-agents.md) (S12 and Stack D, the sidebar) |
@@ -379,3 +379,4 @@ There's no advisor tool in this session, so here is the strongest case against t
 - 2026-11-19: plan amended: S16 replaces S6 and the bottom-up layout. A3's prototype showed fzf's gutter drawn down a gap item, and that one list can't pin a stack under a long list. The user chose to keep the list exactly as today, with the gap only when there are cards. A3's second half moved into A4.
 - 2026-11-19: A4 landed as #31.
 - 2026-11-19: A5 landed as #32.
+- 2026-11-19: A6 landed as #33.
