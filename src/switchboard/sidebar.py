@@ -25,8 +25,6 @@ from switchboard import picker, run, theme, tmux
 
 FOLDER = "SWITCHBOARD_SIDEBAR"
 KEYS = "j:down,k:up,q:ignore"
-HINT = "j/k move · / search\ntab fold · ↵ switch"
-SEARCH_HINT = "↑/↓ move · tab fold\n↵ switch · esc back"
 HOST = "127.0.0.1"
 TIMEOUT = 0.2
 COLUMNS = 32
@@ -127,12 +125,12 @@ def _panes(cell: dict) -> Iterable[dict]:
 
 
 def fzf_args(folder: str, at: int | None) -> list[str]:
-    """The picker's keys, but nothing closes it: `q` does nothing, and so does Esc outside a
-    search. Enter and a double click switch, through a binding that never accepts."""
+    """The picker's keys without its hints, and nothing closes it: `q` does nothing, and so does
+    Esc outside a search. Enter and a double click switch, through a binding that never accepts."""
     switch = shlex.join([*picker.command(), "__switch"])
     listen = shlex.join([*picker.command(), "__listen"])
     return [
-        *picker.list_args(folder, at, KEYS, (HINT, SEARCH_HINT), "ignore"),
+        *picker.list_args(folder, at, KEYS, ("", ""), "ignore"),
         f"--listen={HOST}:0",
         "--bind",
         f"start:execute-silent:{listen}",
@@ -156,7 +154,7 @@ def switch(session: str) -> str:
     if not session:
         return ""
     run.tmux(("switch-client", "-t", f"={session}"))
-    return picker.back(HINT)
+    return picker.back("")
 
 
 def redraw(folder: str) -> str:

@@ -29,10 +29,7 @@ SELF = [sys.executable, "-m", "switchboard"]
 DOT, FILL, OPEN, SHUT, HERE = "\ueabc", "\uf111", "\uf0d7", "\uf0da", "\uf192"
 TEXT, OVERLAY = "38;2;202;211;245", "38;2;128;135;162"
 RED, GREEN, PEACH = "38;2;237;135;150", "38;2;166;218;149", "38;2;245;169;127"
-MUTED = "2;38;2;110;115;141"
-HINTS = ("j/k move · / search", "tab fold · ↵ switch")
-SEARCH_HINTS = ("↑/↓ move · tab fold", "↵ switch · esc back")
-BACK = "clear-query+search()+hide-input+rebind(j,k,/,q)+change-header:"
+BACK = "clear-query+search()+hide-input+rebind(j,k,/,q)"
 
 
 @pytest.fixture(autouse=True)
@@ -42,10 +39,6 @@ def dark(monkeypatch):
 
 def esc(code: str, text: str) -> str:
     return f"\x1b[{code}m{text}\x1b[0m"
-
-
-def header(hints: tuple[str, ...]) -> str:
-    return " \n" + "\n".join(esc(MUTED, line) for line in hints) + "\n "
 
 
 def plain(text: str) -> str:
@@ -217,10 +210,9 @@ def test_keys_and_look(inside):
         assert arg in args
     assert "--listen=127.0.0.1:0" in args
     assert not [arg for arg in args if arg.startswith(("--preview", "--color"))]
-    assert f"--header={header(HINTS)}" in args
     keys = bindings(args)
     assert args[args.index("j:down,k:up,q:ignore") - 1] == "--bind"
-    assert keys["/"] == f"show-input+unbind(j,k,/,q)+change-header:{header(SEARCH_HINTS)}"
+    assert keys["/"] == "show-input+unbind(j,k,/,q)"
     assert keys["load"] == "pos(4)+unbind(load)"
     assert shlex.split(keys["start"].removeprefix("execute-silent:")) == [*SELF, "__listen"]
     enter = shlex.split(keys["enter,double-click"].removeprefix("transform:"))
@@ -231,19 +223,25 @@ def test_keys_and_look(inside):
     assert fields(call["stdin"].splitlines()) == COMPACT
 
 
-def test_no_key_closes_it_or_says_it_does(inside):
+def test_no_key_closes_it(inside):
     stubs = inside
     stubs.fzf.reply(code=130)
     cli.main(["sidebar"])
     args = opened(stubs)["args"]
     assert not [arg for arg in args if "accept" in arg or "abort" in arg]
-    assert "close" not in " ".join(HINTS + SEARCH_HINTS)
-    assert "q" not in " ".join(HINTS)
+
+
+def test_no_hints_show_in_or_out_of_a_search(inside):
+    stubs = inside
+    stubs.fzf.reply(code=130)
+    cli.main(["sidebar"])
+    args = opened(stubs)["args"]
+    assert not [arg for arg in args if arg.startswith("--header") or "change-header" in arg]
 
 
 @pytest.mark.parametrize(
     ("state", "out"),
-    [("enabled", f"{BACK}{header(HINTS)}"), ("hidden", "ignore\n")],
+    [("enabled", BACK), ("hidden", "ignore\n")],
 )
 def test_esc_leaves_a_search_else_does_nothing(state, out):
     key = bindings(sidebar.fzf_args("/f", None))["esc"].removeprefix("transform:")
@@ -253,7 +251,7 @@ def test_esc_leaves_a_search_else_does_nothing(state, out):
 def test_enter_switches_the_client_and_leaves_any_search(stubs):
     enter = bindings(sidebar.fzf_args("/f", None))["enter,double-click"]
     out = sh(enter.removeprefix("transform:").replace("{1}", "'w/feat/x'"), TMUX_PANE=PANE)
-    assert out == f"{BACK}{header(HINTS)}"
+    assert out == BACK
     assert stubs.tmux.calls() == [["switch-client", "-t", "=w/feat/x"]]
 
 

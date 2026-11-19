@@ -21,7 +21,7 @@ BUDGET = 60
 GAP = "  "
 SHOWN = (ps.NEEDS, ps.DONE)
 MARK = {ps.NEEDS: "▲", ps.DONE: "✓"}
-COLOUR = {ps.NEEDS: "themeyellow", ps.DONE: "themegreen"}
+COLOUR = {ps.NEEDS: "themered", ps.DONE: "themegreen"}
 HINT = ("themelightgrey", "prefix w")
 SUPERSCRIPT = str.maketrans("0123456789", "⁰¹²³⁴⁵⁶⁷⁸⁹")
 

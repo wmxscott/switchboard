@@ -57,9 +57,6 @@ The header shows the keys that work at the moment, and changes when you search.
 ## The sidebar
 
 ```
-j/k move · / search
-tab fold · ↵ switch
-
 ▸ gadget ●
 ▾ widget
 │ ◉ main       ●

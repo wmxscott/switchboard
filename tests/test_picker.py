@@ -295,6 +295,13 @@ def test_esc_leaves_a_search_else_closes(monkeypatch, state, out):
     assert sh(esc_key) == out
 
 
+def test_empty_hints_leave_no_header_rows():
+    args = picker.list_args("/f", None, KEYS, ("", ""), "abort")
+    assert not [arg for arg in args if arg.startswith("--header") or "change-header" in arg]
+    assert bindings(args)["/"] == "show-input+unbind(j,k,/,q)"
+    assert picker.back("") == "clear-query+search()+hide-input+rebind(j,k,/,q)"
+
+
 @pytest.mark.parametrize(("session", "out"), [("w/main", "accept\n"), ("", "")])
 def test_enter_accepts_rows_but_not_headers(session, out):
     enter = bindings(picker.fzf_args("/f", None))["enter"].removeprefix("transform:")

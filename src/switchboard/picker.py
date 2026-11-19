@@ -139,13 +139,13 @@ def list_args(
         "--bind",
         keys,
         "--bind",
-        f"/:{SEARCH_KEYS}+change-header:{_hints(search_hint)}",
+        f"/:{SEARCH_KEYS}{_change_header(search_hint)}",
         "--bind",
         f'esc:transform:[ "$FZF_INPUT_STATE" = enabled ] && printf %s {out} || echo {leave}',
         "--delimiter=\t",
         "--with-nth=3",
         "--with-shell=sh -c",
-        f"--header={_hints(hint)}",
+        *([f"--header={_hints(hint)}"] if hint else []),
         "--bind",
         f"tab:transform:{fold} {{2}}",
     ]
@@ -156,7 +156,7 @@ def list_args(
 
 def back(hint: str) -> str:
     """The actions that leave a search."""
-    return f"{BACK_KEYS}+change-header:{_hints(hint)}"
+    return f"{BACK_KEYS}{_change_header(hint)}"
 
 
 def render(found: Model, current: str, compact: bool = False) -> list[Group]:
@@ -230,6 +230,10 @@ def fold(folder: str, group: str) -> str:
     above = groups[:index]
     header = 1 + sum(1 + (0 if i in folded else len(g["rows"])) for i, g in enumerate(above))
     return f"pos({header})+{reload}"
+
+
+def _change_header(hint: str) -> str:
+    return f"+change-header:{_hints(hint)}" if hint else ""
 
 
 def _hints(text: str) -> str:
