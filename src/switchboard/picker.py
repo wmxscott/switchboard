@@ -51,6 +51,7 @@ TEXT, BOLD, DIM, LINE = "text", "bold text", "subtext0", "overlay1"
 MUTED, CURRENT = "dim overlay0", "bold green"
 WIDTH, NARROW = 40, 20
 NARROW_TITLE = NARROW + 3  # a shut header with its dot as wide as a worktree row
+APART = "\t"  # a compact line's dot is a field of its own, which the sidebar places
 
 MODEL, FOLDED = "model.json", "folded.json"
 
@@ -183,7 +184,8 @@ def back(hint: str, held: str = HELD) -> str:
 def render(found: Model, current: str, compact: bool = False) -> list[Group]:
     """Each group's title, its header open and shut, and its lines: the repos, then "other". The
     compact list has no agent lines, counts or git status, and cuts long names short. Its shut
-    header shows the group's most urgent dot instead, so that a fold never hides one."""
+    header shows the group's most urgent dot instead, so that a fold never hides one. Its dots
+    come after `APART`, for the sidebar to place."""
     named: list[tuple[str, Mapping[str, int], Sequence[Row]]] = [
         (str(repo.label) if repo.label else repo.name, repo.counts, repo.rows)
         for repo in found.repos
@@ -207,7 +209,7 @@ def render(found: Model, current: str, compact: bool = False) -> list[Group]:
         shown = {} if compact else counts
         name = _cut(title, NARROW_TITLE) if compact else title
         state = ps.most_urgent(counts) if compact else None
-        dot = f" {sgr(SGR[state], ICON[state])}" if state else ""
+        dot = f" {APART}{sgr(SGR[state], ICON[state])}" if state else ""
         groups.append(
             {
                 "title": title,
@@ -274,16 +276,17 @@ def _header(caret: str, title: str, counts: Mapping[str, int]) -> str:
     return f"{sgr(TEXT, caret)} {sgr(BOLD, title)}{summary}"
 
 
-def _worktree(row: Row, current: str, width: int, status_width: int, cut: bool = False) -> str:
+def _worktree(row: Row, current: str, width: int, status_width: int, compact: bool = False) -> str:
     mark = sgr(CURRENT, HERE) if row.session.name == current else " "
     state = row.state
     icon = sgr(SGR[state], ICON[state]) if state else ""
     status = _status(row) if status_width else ""
     column = sgr(DIM, status) + " " * (status_width - len(status)) if status else " " * status_width
     gap = "  " if status_width else ""
-    text = _cut(_name(row), width) if cut else _name(row)
+    text = _cut(_name(row), width) if compact else _name(row)
     name = sgr(TEXT, text) + " " * (width - len(text))
-    return f"{sgr(LINE, '│')} {mark} {name}{gap}{column}  {icon}".rstrip()
+    apart = APART if compact and icon else ""
+    return f"{sgr(LINE, '│')} {mark} {name}{gap}{column}  {apart}{icon}".rstrip()
 
 
 def _status(row: Row) -> str:
