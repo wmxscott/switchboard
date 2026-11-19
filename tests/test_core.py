@@ -22,7 +22,12 @@ FORMAT = (
     "#{session_name}\t#{@switchboard-role}\t#{@switchboard-turn}\t#{@switchboard-pending}"
     "\t#{@switchboard-reasons}\t#{@switchboard-task}"
 )
-CLIENTS = [";", "list-clients", "-F", "#{client_name}\t#{client_session}"]
+CLIENTS = [
+    ";",
+    "list-clients",
+    "-F",
+    "#{client_name}\t#{?#{P:#{@switchboard-sidebar}},1,}\t#{client_session}",
+]
 READ = ["display-message", "-p", "-t", PANE, FORMAT, *CLIENTS]
 GUARDED_READ = ["display-message", "-p", "-t", PANE, f"{FORMAT}\t#{{pane_pid}}", *CLIENTS]
 
@@ -165,7 +170,7 @@ def stored(
     """The pane's state, and its process id for a guarded read."""
     first = "\t".join(["work", *state.split(":"), reasons, task])
     first += "" if pid is None else f"\t{pid}"
-    lines = [first, "/dev/ttys001\telsewhere"]
+    lines = [first, "/dev/ttys001\t\telsewhere"]
     stubs.tmux.answer("display-message", stdout="\n".join(lines) + "\n")
 
 
@@ -225,6 +230,21 @@ def test_verbs_get_the_stored_state_and_apply_after_one_read(stubs):
         "set-option",
         "list-sessions",
     ]
+
+
+def test_the_read_gives_each_client_its_session_and_whether_its_window_has_a_sidebar(stubs):
+    lines = [
+        "work\tlead\tidle\t\t\t",
+        "/dev/ttys001\t1\tmy\tsession",
+        "/dev/ttys002\t\twork",
+        "junk",
+    ]
+    stubs.tmux.answer("display-message", stdout="\n".join(lines) + "\n")
+    assert core.read(PANE).clients == [
+        ("/dev/ttys001", "my\tsession", True),
+        ("/dev/ttys002", "work", False),
+    ]
+    assert stubs.tmux.calls() == [READ]
 
 
 def test_no_verbs_still_registers_an_unknown_pane(stubs):

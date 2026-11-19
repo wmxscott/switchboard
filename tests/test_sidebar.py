@@ -799,7 +799,7 @@ def test_refresh_without_a_sidebar_does_no_more(stubs, monkeypatch):
 def test_a_dead_sidebar_leaves_refresh_and_the_hook_silent(stubs):
     panes(stubs, f"{dead_port()} k", "junk")
     stubs.tmux.answer(
-        "display-message", stdout="w/main\tlead\tworking\t\t\t\n/dev/ttys001\telsewhere\n"
+        "display-message", stdout="w/main\tlead\tworking\t\t\t\n/dev/ttys001\t\telsewhere\n"
     )
     for args, stdin in ((["refresh"], ""), (["hook", "Stop"], '{"hook_event_name": "Stop"}')):
         start = time.perf_counter()

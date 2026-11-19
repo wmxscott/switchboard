@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from switchboard import panestate, run
 
 ATTENTION = "@attention"
-SIDEBAR = "@switchboard-sidebar"
+SIDEBAR = panestate.SIDEBAR
 SESSION_FIELDS = (
     "session_name",
     "@wkt-worktree",

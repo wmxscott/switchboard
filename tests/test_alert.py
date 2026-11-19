@@ -50,6 +50,27 @@ def test_done_reads_is_done(stubs, monkeypatch):
     assert stubs.tmux.calls()[0][-1] == "✓ repo/main is done"
 
 
+def test_a_client_whose_window_has_a_sidebar_gets_no_message_but_the_sound_plays(
+    stubs, monkeypatch
+):
+    played = []
+    monkeypatch.setattr(alert, "play", lambda: played.append(True))
+    alert.send("needs", "repo/main", ["/dev/ttys001", "/dev/ttys002"], {"/dev/ttys001"})
+    assert stubs.tmux.calls() == [
+        ["display-message", "-c", "/dev/ttys002", "-d", "4000", "▲ repo/main needs you"]
+    ]
+    assert played == [True]
+
+
+def test_the_sound_plays_when_every_clients_window_has_a_sidebar(stubs, monkeypatch):
+    played = []
+    monkeypatch.setattr(alert, "play", lambda: played.append(True))
+    clients = ["/dev/ttys001", "/dev/ttys002"]
+    alert.send("done", "repo/main", clients, set(clients))
+    assert stubs.tmux.calls() == []
+    assert played == [True]
+
+
 def test_no_client_means_no_message_and_no_sound(stubs, monkeypatch):
     played = []
     monkeypatch.setattr(alert, "play", lambda: played.append(True))

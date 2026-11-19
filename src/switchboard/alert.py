@@ -1,4 +1,5 @@
-"""The alert: a tmux message on each client, and one short sound in the background."""
+"""The alert: a tmux message on each client whose window has no sidebar, and one short sound in
+the background."""
 
 from __future__ import annotations
 
@@ -6,7 +7,7 @@ import contextlib
 import os
 import shutil
 import subprocess
-from collections.abc import Iterable
+from collections.abc import Container, Iterable
 
 from switchboard import panestate as ps
 from switchboard import run
@@ -33,11 +34,15 @@ def news(before: State, after: State) -> str | None:
     return shown if shown in (ps.NEEDS, ps.DONE) else None
 
 
-def send(state: str, session: str, clients: Iterable[str]) -> None:
+def send(state: str, session: str, clients: Iterable[str], sidebars: Container[str] = ()) -> None:
+    """Messages each client but those in `sidebars`, whose sidebar shows the agent's card instead,
+    and plays the sound when there's any client."""
+    clients = list(clients)
     text = TEXT[state].format(session).replace("#", "##")
-    commands = [("display-message", "-c", client, "-d", DELAY, text) for client in clients]
-    if commands:
-        run.tmux(*commands)
+    run.tmux(
+        *(("display-message", "-c", c, "-d", DELAY, text) for c in clients if c not in sidebars)
+    )
+    if clients:
         play()
 
 
