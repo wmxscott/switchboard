@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| **Status** | draft · next: A1, once 1.3.0 has landed |
-| **Updated** | 2026-11-18 |
+| **Status** | in progress · next: A4 |
+| **Updated** | 2026-11-19 |
 | **Tracker** | — |
 | **Related** | [design, approved 2026-11-18](../superpowers/specs/2026-11-18-sidebar-cards-design.md); [previous plan](topsnz-more-agents.md) (S12 and Stack D, the sidebar) |
 
@@ -52,7 +52,7 @@ While a window has switchboard's sidebar open, agents that need you or have fini
   - boxed toast-style cards ("B"), the user's choice;
   - fzf's footer, which can't be selected;
   - a second fzf pane for the cards, which breaks moving from the list to the cards with `j`.
-- **S6 Cards are always visible (my call, from the builder check):** when the list is taller than the pane, the list scrolls and the stack stays at the bottom. Past what fits, the oldest cards fold into one `+N more` line, and Enter on it does nothing.
+- ~~**S6 Cards are always visible (my call, from the builder check):** when the list is taller than the pane, the list scrolls and the stack stays at the bottom. Past what fits, the oldest cards fold into one `+N more` line, and Enter on it does nothing.~~ Superseded by S16: one fzf list scrolls as a whole, so the stack can't stay on screen under a list taller than the pane, in either layout (A3's finding).
   - **Rejected:** cards that scroll off below a long list, which defeats them.
 - **S7 Keys (user):**
   - `G` jumps to the newest card, and `g` to the top of the list;
@@ -82,7 +82,9 @@ While a window has switchboard's sidebar open, agents that need you or have fini
   - `--id-nth`, which keeps the cursor on an item across reloads, needs 0.71, so the redraw works out `pos()` itself;
   - `--layout=default` draws items from the bottom up, and `reverse` from the top down (fzf 0.75 man page).
 
-  Whether 0.59 draws multi-line items the same way is **not verified**, and A3 checks it.
+  ~~Whether 0.59 draws multi-line items the same way is **not verified**, and A3 checks it.~~ Verified on 0.59 and 0.75 in A3 (#29): `--read0` items with `--with-nth=4` span lines on both. 0.59 also has the `resize` event, `{n}`, negative `pos()`, `$FZF_LINES` and `track-current`.
+  - fzf trims trailing whitespace from `--with-nth` output, so a blank multi-line item collapses to one line unless its last line holds a non-blank character. A Braille blank (U+2800) works on both versions.
+  - fzf draws its gutter (the left column it reserves for the cursor) on every line of every item. It can't be set per item. With the user's `--color=gutter`, a blank gap item is a dark stripe down column 0.
 - **S12 The hook stays fast:**
   - reasons are read from fields already parsed, with no new imports on the fast path;
   - a missing or renamed payload field gives a plain card (`needs you`, `done`) and never an error.
@@ -95,6 +97,13 @@ While a window has switchboard's sidebar open, agents that need you or have fini
 
   **Rejected:** R is one PR. Running it beside K saves one review cycle, but costs a second base and a release phase that depends on both.
 
+- **S16 Top-down, with the gap only when there are cards (user, 2026-11-19, after A3).**
+  - The sidebar keeps 1.3.0's `reverse` layout, so the list is exactly as today, search stays at the top, and Tab's cursor needs no rework.
+  - When there are cards, a gap item fills the space between the list and the stack, so the stack sits at the bottom of the pane. fzf's gutter runs down the gap, and that stripe is accepted as part of the cards. With no cards there's no gap, no rule and no stripe.
+  - The cards are visible whenever the list and the stack fit the pane. When they don't, the list and the stack scroll together as one list, and `G` (A5) reaches the newest card.
+  - **Rejected:**
+    - the bottom-up `default` layout: the stripe is always there, down to the bottom; search moves to the bottom; and Tab's reload lands one row off;
+    - hiding the gutter in the sidebar, which changes the list rows too.
 ## Card content
 
 ### Lines
@@ -174,12 +183,12 @@ While a window has switchboard's sidebar open, agents that need you or have fini
 
 ### Layout
 
-- **From the top:** the list; then an empty gap; then a rule and the cards, oldest first and newest last. The stack is always drawn whole (S6).
-- **With no cards:** no rule and no gap item drawn as content, and the list still starts on the top row.
-- **One lead:** `--layout=default` draws from the bottom up. Feed the items in reverse, so the cards are first in the input and stay on screen, while the list scrolls off the top when it's long. Then size a single blank gap item to the pane's height.
+- **From the top** (S16, the `reverse` layout as today): the list; then, only when there are cards, a gap item, a rule, and the cards, oldest first and newest last.
+- **With no cards:** the sidebar is exactly 1.3.0's.
+- **The gap item** is sized from `$FZF_LINES` so the stack ends on the pane's last row, and is re-sized on fzf's `resize` event. It's one multi-line item whose last line holds a non-blank character (S11). The rule line can be that line. When the list and the stack don't fit, the gap is empty or absent, and everything scrolls as one list.
 - The gap is never a cursor stop. `j` from the last list row goes to the first card, and `k` comes back.
 - How the gap is drawn and skipped is the builder's call.
-- **When crowded:** the list keeps at least 3 rows, and cards that don't fit in the rest fold into `+N more`, the oldest first. Enter on `+N more` does nothing.
+- **When crowded:** past what fits under the list, the oldest cards fold into `+N more`. Enter on `+N more` does nothing.
 - **Search** (`/`) matches cards as well as list rows. The gap and the rule never match.
 
 ### Keys and cursor
@@ -254,7 +263,7 @@ While a window has switchboard's sidebar open, agents that need you or have fini
 *Shippable when:* tests and lint pass; a recorded Claude `PermissionRequest` payload piped to `switchboard hook PermissionRequest` in a throwaway tmux pane stores `run: <command>`.
 *Split seam:* `pi.py` after Claude and Codex.
 
-**A3: NUL-separated, bottom-up sidebar.**
+**A3: NUL-separated, bottom-up sidebar.** Landed as #29: the `--read0` half. Its second half, the layout and the gap, moved into A4 under S16.
 - The sidebar's fzf moves to `--read0`.
 - The layout draws so a stack at the bottom will always stay on screen (see [Layout](#layout)), with the gap mechanism and its cursor skipping, but no cards yet.
 - The list looks and behaves exactly as in 1.3.0: folds, search, Enter, redraw, the current-session marker, and the list on the top row.
@@ -266,13 +275,18 @@ While a window has switchboard's sidebar open, agents that need you or have fini
 *Split seam:* the `--read0` item format first, then the bottom-up layout and the gap.
 
 **A4: the cards.**
-- A card model: a pure function from the panes and the sidebar's session to the ordered cards, applying S2 and S6's fold.
-- The stack, the rule and `+N more` in the sidebar.
+- A card model: a pure function from the panes and the sidebar's session to the ordered cards, applying S2 and the `+N more` fold.
+- The stack, the rule, the gap and `+N more` in the sidebar, as in [Layout](#layout) under S16, with the gap's cursor skipping and its re-sizing on `resize`.
 - Enter on a card goes to its pane.
 - Redrawn on the existing poke.
-- Cites S2–S6, S10, Card content and Layout.
+- Cites S2–S5, S10, S11, S16, Card content and Layout.
 
-*Shippable when:* tests and lint pass; on a throwaway server, `switchboard state needs k --reason 'run: npm test'` in another session's pane makes the card the sidebar's bottom item; Enter on it lands on that pane; `resolve k` removes it.
+*Shippable when:* tests and lint pass. On a throwaway server, with fzf 0.59 and 0.75:
+- `switchboard state needs k --reason 'run: npm test'` in another session's pane makes the card the sidebar's bottom item, on the pane's last row;
+- `j` from the last list row lands on the first card;
+- Enter on the card lands on that pane;
+- `resolve k` removes it, leaving the sidebar exactly 1.3.0's.
+
 *Split seam:* the card model, with its tests, first.
 
 **A5: `G`/`g` and a steady cursor.**
@@ -359,3 +373,7 @@ There's no advisor tool in this session, so here is the strongest case against t
 - 2026-11-18: plan written from the approved design.
 - 2026-11-19: 1.3.0 landed as #26, the base this plan builds on.
 - 2026-11-19: A1 landed as #27.
+- 2026-11-19: A2 landed as #28.
+- 2026-11-19: P1 landed as ai-toolkit#37 (Stack P done; installed with `pi update`).
+- 2026-11-19: A3 landed as #29, its `--read0` half.
+- 2026-11-19: plan amended: S16 replaces S6 and the bottom-up layout. A3's prototype showed fzf's gutter drawn down a gap item, and that one list can't pin a stack under a long list. The user chose to keep the list exactly as today, with the gap only when there are cards. A3's second half moved into A4.
