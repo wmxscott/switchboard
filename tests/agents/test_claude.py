@@ -178,6 +178,24 @@ def test_idle_prompt_after_an_interrupt_clears_working(stubs):
     assert after(stubs) == "lead:idle:"
 
 
+@pytest.mark.parametrize(
+    ("before", "expected"),
+    [
+        ("lead:working:lead", "lead:idle:"),
+        ("lead:working:a1,lead", "lead:idle:"),
+        ("lead:done:lead", "lead:done:"),
+        ("lead:idle:", None),
+    ],
+)
+def test_idle_prompt_clears_a_question_dismissed_with_no_event(stubs, before, expected):
+    """Claude Code fires no hook when a question or a permission is dismissed or interrupted. Its
+    idle notification comes only with nothing loading and no dialog on screen, so nothing can be
+    waiting on the user then."""
+    stored(stubs, before)
+    fire("Notification", message="Claude is waiting for your input", **note("idle_prompt"))
+    assert after(stubs) == expected
+
+
 def test_parallel_subagents_do_not_clear_each_other(stubs):
     steps = [
         ("PermissionRequest", "a1", "lead:working:", "lead:working:a1"),
