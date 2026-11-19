@@ -1,8 +1,10 @@
 """The picker: tmux sessions in fzf, grouped by repo with their agents, switching the client that
 opened it.
 
-Each fzf line is `session<TAB>group<TAB>display`, with only the display shown. A repo header has no
-session. Folding reloads the lines from a cache in a temporary folder, so it never re-runs git.
+Each fzf line is `session<TAB>pane<TAB>group<TAB>display`, with only the display shown. The pane is
+where picking the line lands: an agent row's own, a worktree row's most urgent agent's, or none. A
+repo header has no session. Folding reloads the lines from a cache in a temporary folder, so it
+never re-runs git.
 """
 
 from __future__ import annotations
@@ -87,10 +89,18 @@ def pick() -> int:
         return 130
     if result.returncode not in (0, 1):
         raise PickerError(f"fzf exited with status {result.returncode}")
-    session = result.stdout.partition("\t")[0]
-    if session and run.tmux(("switch-client", "-c", client, "-t", f"={session}")) is None:
+    session, pane = [*result.stdout.split("\t"), "", ""][:2]
+    if session and not switch(session, pane, client):
         raise PickerError(f"can't switch to {session}")
     return 0
+
+
+def switch(session: str, pane: str, client: str = "") -> bool:
+    """Switches the client to `pane`, else to `session`: the pane may have closed since the list
+    was drawn."""
+    flags = ("-c", client) if client else ()
+    targets = (pane, f"={session}") if pane else (f"={session}",)
+    return any(run.tmux(("switch-client", *flags, "-t", target)) is not None for target in targets)
 
 
 def fzf_problem(who: str = "the picker") -> str | None:
@@ -114,7 +124,7 @@ def fzf_args(folder: str, at: int | None) -> list[str]:
     preview = shlex.join([*command(), "__preview"])
     return [
         *list_args(folder, at, KEYS, (HINT, SEARCH_HINT), "abort"),
-        f"--preview={preview} {{1}}",
+        f"--preview={preview} {{1}} {{2}}",
         f"--preview-window={PREVIEW}",
         "--bind",
         "enter:transform:[ -n {1} ] && echo accept",
@@ -143,11 +153,11 @@ def list_args(
         "--bind",
         f'esc:transform:[ "$FZF_INPUT_STATE" = enabled ] && printf %s {out} || echo {leave}',
         "--delimiter=\t",
-        "--with-nth=3",
+        "--with-nth=4",
         "--with-shell=sh -c",
         *([f"--header={_hints(hint)}"] if hint else []),
         "--bind",
-        f"tab:transform:{fold} {{2}}",
+        f"tab:transform:{fold} {{3}}",
     ]
     if at:
         args += ["--bind", f"load:pos({at})+unbind(load)"]
@@ -177,9 +187,10 @@ def render(found: Model, current: str, compact: bool = False) -> list[Group]:
         body = []
         for row in members:
             display = _worktree(row, current, width, status_width, compact)
-            body.append(_line(row.session.name, index, display))
+            target = row.target
+            body.append(_line(row.session.name, target.id if target else "", index, display))
             body += [
-                _line(row.session.name, index, _agent(agent, n == len(row.agents) - 1))
+                _line(row.session.name, agent.id, index, _agent(agent, n == len(row.agents) - 1))
                 for n, agent in enumerate(() if compact else row.agents)
             ]
         shown = {} if compact else counts
@@ -189,8 +200,8 @@ def render(found: Model, current: str, compact: bool = False) -> list[Group]:
         groups.append(
             {
                 "title": title,
-                "open": _line("", index, _header(OPEN, name, shown)),
-                "shut": _line("", index, _header(SHUT, name, shown) + dot),
+                "open": _line("", "", index, _header(OPEN, name, shown)),
+                "shut": _line("", "", index, _header(SHUT, name, shown) + dot),
                 "rows": body,
             }
         )
@@ -286,8 +297,8 @@ def _name(row: Row) -> str:
     return row.worktree.branch if row.worktree else row.session.name
 
 
-def _line(session: str, group: int, display: str) -> str:
-    return f"{session}\t{group}\t{display}"
+def _line(session: str, pane: str, group: int, display: str) -> str:
+    return f"{session}\t{pane}\t{group}\t{display}"
 
 
 def sgr(style: str, text: str) -> str:

@@ -17,8 +17,9 @@ SCRUBBED = ("TMUX", "CLAUDECODE")
 SCRUBBED_PREFIXES = ("TMUX_", "SWITCHBOARD_", "CLAUDE_")
 
 # A stand-in for `tmux`, and for `afplay`. It logs every call and answers from a JSON spec keyed by
-# subcommand, "*" matching any other: {"list-sessions": {"code": 0, "stdout": "...",
-# "stderr": ""}}. A command without an answer succeeds with no output.
+# the whole command line joined by spaces, else by subcommand, "*" matching any other:
+# {"list-sessions": {"code": 0, "stdout": "...", "stderr": ""}}. A command without an answer
+# succeeds with no output.
 STUB_TMUX = """#!{python}
 import json, sys
 
@@ -30,7 +31,7 @@ try:
         spec = json.load(f)
 except (OSError, ValueError):
     spec = {{}}
-answer = spec.get(args[0] if args else "", spec.get("*", {{}}))
+answer = spec.get(" ".join(args), spec.get(args[0] if args else "", spec.get("*", {{}})))
 sys.stdout.write(answer.get("stdout", ""))
 sys.stderr.write(answer.get("stderr", ""))
 sys.exit(answer.get("code", 0))
@@ -80,7 +81,8 @@ class Stub:
 
 class StubTmux(Stub):
     def answer(self, command: str, stdout: str = "", stderr: str = "", code: int = 0) -> None:
-        """How the stub answers `command`, or with "*", any command without its own answer."""
+        """How the stub answers `command`, a subcommand or a whole command line, or with "*", any
+        command without its own answer."""
         spec = self.spec()
         spec[command] = {"code": code, "stdout": stdout, "stderr": stderr}
         self.spec_path.write_text(json.dumps(spec))

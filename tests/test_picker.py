@@ -77,20 +77,20 @@ def fixture() -> Model:
 
 
 RENDERED = [
-    ("", "0", f"{OPEN} gadget  1 done"),
-    ("gadget", "0", f"│   main     {FILL}"),
-    ("gadget", "0", f"│   └ {FILL} claude · win 3 · done"),
-    ("", "1", f"{OPEN} W tools/widget  1 needs you · 1 working"),
-    ("w/main", "1", f"│ {HERE} main     {FILL}"),
-    ("w/main", "1", f"│   ├ {FILL} claude · win 1 · needs you"),
-    ("w/main", "1", f"│   └ {DOT} teammate · win 2 · idle"),
-    ("w/feat/x", "1", f"│   feat/x   {FILL}"),
-    ("w/feat/x", "1", f"│   └ {FILL} claude · win 1 · working"),
-    ("w/zed", "1", "│   zed"),
-    ("", "2", f"{OPEN} other"),
-    ("scratch", "2", f"│   scratch  {DOT}"),
-    ("scratch", "2", f"│   └ {DOT} claude · win 4 · idle"),
-    ("home", "2", "│   home"),
+    ("", "", "0", f"{OPEN} gadget  1 done"),
+    ("gadget", "%3", "0", f"│   main     {FILL}"),
+    ("gadget", "%3", "0", f"│   └ {FILL} claude · win 3 · done"),
+    ("", "", "1", f"{OPEN} W tools/widget  1 needs you · 1 working"),
+    ("w/main", "%1", "1", f"│ {HERE} main     {FILL}"),
+    ("w/main", "%1", "1", f"│   ├ {FILL} claude · win 1 · needs you"),
+    ("w/main", "%2", "1", f"│   └ {DOT} teammate · win 2 · idle"),
+    ("w/feat/x", "%1", "1", f"│   feat/x   {FILL}"),
+    ("w/feat/x", "%1", "1", f"│   └ {FILL} claude · win 1 · working"),
+    ("w/zed", "", "1", "│   zed"),
+    ("", "", "2", f"{OPEN} other"),
+    ("scratch", "%9", "2", f"│   scratch  {DOT}"),
+    ("scratch", "%9", "2", f"│   └ {DOT} claude · win 4 · idle"),
+    ("home", "", "2", "│   home"),
 ]
 
 
@@ -165,7 +165,7 @@ def test_an_agent_row_names_its_agent(role, agent, who):
 
 
 def test_row_colours():
-    lines = [line.split("\t")[2] for line in picker.lines(picker.render(fixture(), "w/main"))]
+    lines = [line.split("\t")[3] for line in picker.lines(picker.render(fixture(), "w/main"))]
     assert lines[0].startswith(f"{esc(TEXT, OPEN)} {esc(f'1;{TEXT}', 'gadget')}")
     assert esc(GREEN, "1 done") in lines[0]
     assert esc(RED, "1 needs you") + esc(OVERLAY, " · ") + esc(PEACH, "1 working") in lines[3]
@@ -194,7 +194,7 @@ def test_glyphs_are_written_as_escapes():
 
 def test_light_theme_rows(monkeypatch):
     monkeypatch.setenv("SWITCHBOARD_THEME", "light")
-    lines = [line.split("\t")[2] for line in picker.lines(picker.render(fixture(), "w/main"))]
+    lines = [line.split("\t")[3] for line in picker.lines(picker.render(fixture(), "w/main"))]
     assert lines[4].endswith(esc("38;2;210;15;57", FILL))
     assert lines[7].endswith(esc("38;2;254;100;11", FILL))
     assert esc("38;2;108;111;133", "claude · win 1 · working") in lines[8]
@@ -205,7 +205,7 @@ def test_long_names_stop_aligning_the_icons():
     found = Model(
         (Repo("/w", "w", "main", (worktree("w/long", long, "/w", (1, "lead", "done")),)),)
     )
-    assert fields(picker.lines(picker.render(found, "")))[1][2] == f"│   {long}  {FILL}"
+    assert fields(picker.lines(picker.render(found, "")))[1][3] == f"│   {long}  {FILL}"
 
 
 def test_git_status_sits_dim_between_the_branch_and_the_icon():
@@ -218,7 +218,7 @@ def test_git_status_sits_dim_between_the_branch_and_the_icon():
     statuses = (Status(2, 13), Status(0, 1), Status(0, 0), None)
     rows = [dataclasses.replace(row, status=s) for row, s in zip(rows, statuses, strict=True)]
     lines = [
-        line.split("\t")[2]
+        line.split("\t")[3]
         for line in picker.lines(picker.render(Model((Repo("/w", "w", "main", tuple(rows)),)), ""))
     ]
     assert [plain(line) for line in lines if "claude" not in line] == [
@@ -241,7 +241,7 @@ def test_keys(picking):
     assert "--no-input" in args
     assert "--no-sort" in args
     assert "--delimiter=\t" in args
-    assert "--with-nth=3" in args
+    assert "--with-nth=4" in args
     assert "--with-shell=sh -c" in args
     assert "--prompt=> " in args
     assert f"--header={header(HINTS)}" in args
@@ -254,7 +254,7 @@ def test_keys(picking):
     assert keys["load"] == "pos(5)+unbind(load)"
     command = shlex.split(keys["tab"].removeprefix("transform:"))
     assert command[:4] == [sys.executable, "-m", "switchboard", "__fold"]
-    assert command[5] == "{2}"
+    assert command[5] == "{3}"
     assert fields(call["stdin"].splitlines()) == RENDERED
 
 
@@ -308,20 +308,51 @@ def test_enter_accepts_rows_but_not_headers(session, out):
     assert sh(enter.replace("{1}", shlex.quote(session))) == out
 
 
-def test_enter_on_a_worktree_switches_the_pinned_client(picking, capsys):
+def test_enter_on_a_worktree_lands_the_pinned_client_on_its_agents_pane(picking, capsys):
     stubs = picking
-    stubs.fzf.reply(line_of("w/feat/x"))
+    stubs.fzf.reply(line_of("gadget"))
     assert cli.main([]) == 0
-    assert switches(stubs) == [["switch-client", "-c", CLIENT, "-t", "=w/feat/x"]]
+    assert switches(stubs) == [["switch-client", "-c", CLIENT, "-t", "%3"]]
     assert capsys.readouterr() == ("", "")
 
 
-def test_enter_on_an_agent_row_switches_to_its_session(picking):
+def test_enter_on_a_worktree_without_agents_switches_to_its_session(picking):
     stubs = picking
-    stubs.fzf.reply(line_of("gadget", 1))
-    assert line_of("gadget", 1).startswith(f"gadget\t0\t│   └ {FILL} claude")
+    stubs.fzf.reply(line_of("w/zed"))
     assert cli.main([]) == 0
-    assert switches(stubs) == [["switch-client", "-c", CLIENT, "-t", "=gadget"]]
+    assert switches(stubs) == [["switch-client", "-c", CLIENT, "-t", "=w/zed"]]
+
+
+def test_enter_on_an_agent_row_lands_on_its_pane(picking):
+    stubs = picking
+    stubs.fzf.reply(line_of("w/main", 2))
+    assert line_of("w/main", 2).startswith(f"w/main\t%2\t1\t│   └ {DOT} teammate")
+    assert cli.main([]) == 0
+    assert switches(stubs) == [["switch-client", "-c", CLIENT, "-t", "%2"]]
+
+
+def test_a_pane_gone_since_the_list_was_drawn_falls_back_to_its_session(picking, capsys):
+    stubs = picking
+    stubs.fzf.reply(line_of("gadget"))
+    stubs.tmux.answer(f"switch-client -c {CLIENT} -t %3", code=1, stderr="can't find pane: %3\n")
+    assert cli.main([]) == 0
+    assert switches(stubs) == [
+        ["switch-client", "-c", CLIENT, "-t", "%3"],
+        ["switch-client", "-c", CLIENT, "-t", "=gadget"],
+    ]
+    assert capsys.readouterr() == ("", "")
+
+
+def test_a_session_lands_on_its_most_urgent_agent_then_its_lead():
+    agents = (
+        (0, "teammate", "working", ("a1",)),
+        (1, "lead", "done"),
+        (2, "lead", "idle", ("lead",)),
+    )
+    found = Model((Repo("/w", "w", "main", (worktree("w/a", "main", "/w", *agents),)),))
+    for compact in (False, True):
+        worktree_line = list(picker.lines(picker.render(found, "", compact)))[1]
+        assert worktree_line.split("\t")[:2] == ["w/a", "%2"]
 
 
 def test_esc_exits_130_and_switches_nothing(picking):
@@ -331,7 +362,7 @@ def test_esc_exits_130_and_switches_nothing(picking):
     assert switches(stubs) == []
 
 
-@pytest.mark.parametrize(("stdout", "code"), [(f"\t1\t{OPEN} W tools/widget\n", 0), ("", 1)])
+@pytest.mark.parametrize(("stdout", "code"), [(f"\t\t1\t{OPEN} W tools/widget\n", 0), ("", 1)])
 def test_a_line_without_a_session_switches_nothing(picking, stdout, code):
     stubs = picking
     stubs.fzf.reply(stdout, code=code)
@@ -349,18 +380,20 @@ def test_the_temporary_folder_is_removed(picking, tmp_path):
 
 
 @pytest.mark.parametrize(
-    ("answer", "message"),
+    ("answer", "message", "tried"),
     [
-        ({"code": 2}, "fzf exited with status 2"),
-        ({"stdout": "w/zed\t1\t│   zed\n"}, "can't switch to w/zed"),
+        ({"code": 2}, "fzf exited with status 2", 0),
+        ({"stdout": "w/zed\t\t1\t│   zed\n"}, "can't switch to w/zed", 1),
+        ({"stdout": "gadget\t%3\t0\t│   main\n"}, "can't switch to gadget", 2),
     ],
 )
-def test_failures(picking, capsys, answer, message):
+def test_failures(picking, capsys, answer, message, tried):
     stubs = picking
     stubs.fzf.reply(answer.get("stdout", ""), code=answer.get("code", 0))
     stubs.tmux.answer("switch-client", code=1, stderr="can't find session\n")
     assert cli.main([]) == 1
     assert capsys.readouterr().err == f"switchboard: {message}\n"
+    assert len(switches(stubs)) == tried
 
 
 def test_no_client(picking, capsys):
@@ -419,19 +452,22 @@ def test_tab_folds_and_keeps_the_cursor_on_the_header(cache):
     assert picker.fold(cache, "1") == f"pos(4)+{rows}"
     assert fields(picker.rows(cache).splitlines()) == [
         *RENDERED[:3],
-        ("", "1", f"{SHUT} W tools/widget  1 needs you · 1 working"),
+        ("", "", "1", f"{SHUT} W tools/widget  1 needs you · 1 working"),
         *RENDERED[10:],
     ]
     assert picker.fold(cache, "0") == f"pos(1)+{rows}"
     assert picker.fold(cache, "2") == f"pos(3)+{rows}"
     assert fields(picker.rows(cache).splitlines()) == [
-        ("", "0", f"{SHUT} gadget  1 done"),
-        ("", "1", f"{SHUT} W tools/widget  1 needs you · 1 working"),
-        ("", "2", f"{SHUT} other"),
+        ("", "", "0", f"{SHUT} gadget  1 done"),
+        ("", "", "1", f"{SHUT} W tools/widget  1 needs you · 1 working"),
+        ("", "", "2", f"{SHUT} other"),
     ]
     picker.fold(cache, "0")
     assert picker.fold(cache, "1") == f"pos(4)+{rows}"
-    assert fields(picker.rows(cache).splitlines()) == [*RENDERED[:10], ("", "2", f"{SHUT} other")]
+    assert fields(picker.rows(cache).splitlines()) == [
+        *RENDERED[:10],
+        ("", "", "2", f"{SHUT} other"),
+    ]
 
 
 def test_tab_while_searching_reloads_without_moving_the_cursor(cache, monkeypatch):
@@ -444,17 +480,17 @@ def test_the_preview_runs_through_its_hidden_command(stubs, session, out):
     stubs.tmux.answer("*", code=1, stderr="no server running\n")
     (command,) = [arg for arg in picker.fzf_args("/f", None) if arg.startswith("--preview=")]
     command = command.removeprefix("--preview=")
-    assert shlex.split(command)[:4] == [sys.executable, "-m", "switchboard", "__preview"]
-    assert plain(sh(command.replace("{1}", session))) == out
+    assert shlex.split(command) == [sys.executable, "-m", "switchboard", "__preview", "{1}", "{2}"]
+    assert plain(sh(command.replace("{1}", session).replace("{2}", "'%3'"))) == out
 
 
 def test_tab_binding_runs_through_the_hidden_commands(cache):
     """fzf's side, done by hand: run the Tab binding, then the reload it asks for."""
     tab = bindings(picker.fzf_args(cache, None))["tab"].removeprefix("transform:")
-    actions = sh(tab.replace("{2}", "'1'"))
+    actions = sh(tab.replace("{3}", "'1'"))
     position, _, reload = actions.strip().partition("+reload:")
     assert position == "pos(4)"
     assert fields(sh(reload).splitlines())[3:5] == [
-        ("", "1", f"{SHUT} W tools/widget  1 needs you · 1 working"),
+        ("", "", "1", f"{SHUT} W tools/widget  1 needs you · 1 working"),
         RENDERED[10],
     ]

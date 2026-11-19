@@ -33,6 +33,14 @@ def test_tmux_wildcard_answers_everything_else(stubs):
     assert (failed.returncode, failed.stderr) == (1, "no server running\n")
 
 
+def test_tmux_answers_a_whole_command_line_before_its_subcommand(stubs):
+    stubs.tmux.answer("switch-client", stdout="any\n")
+    stubs.tmux.answer("switch-client -t %1", code=1, stderr="can't find pane: %1\n")
+    gone = call("tmux", "switch-client", "-t", "%1")
+    assert (gone.returncode, gone.stderr) == (1, "can't find pane: %1\n")
+    assert call("tmux", "switch-client", "-t", "=a").stdout == "any\n"
+
+
 def test_fzf_replays_one_reply_per_call(stubs):
     stubs.fzf.reply("b\n")
     stubs.fzf.reply(code=130)

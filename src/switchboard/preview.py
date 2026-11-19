@@ -1,6 +1,6 @@
-"""The picker's preview of a session: its name and folder, its windows, and the last lines of its
-most urgent agent's pane, else of its active pane. Two tmux calls; one that fails leaves out what
-it would have shown."""
+"""The picker's preview of a session: its name and folder, its windows, and the last lines of the
+pane picking the line lands on, else of its most urgent agent's pane, else of its active pane. Two
+tmux calls; one that fails leaves out what it would have shown."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ import os
 from dataclasses import dataclass
 
 from switchboard import panestate as ps
-from switchboard import run
+from switchboard import run, tmux
 from switchboard.picker import BOLD, CURRENT, DIM, HERE, ICON, SGR, describe, sgr
 from switchboard.tmux import Pane
 
@@ -17,6 +17,7 @@ FIELDS = (
     "session_path",
     "window_index",
     "window_active",
+    "pane_index",
     "pane_id",
     "pane_active",
     "pane_current_command",
@@ -40,7 +41,7 @@ class Layout:
     active: Pane
 
 
-def show(session: str, height: int = HEIGHT) -> str:
+def show(session: str, height: int = HEIGHT, pane: str = "") -> str:
     """At most `height` lines, and nothing for a repo header's empty session."""
     if not session:
         return ""
@@ -49,11 +50,12 @@ def show(session: str, height: int = HEIGHT) -> str:
     if found:
         lines += [sgr(DIM, _home(found.path)), "", sgr(DIM, "windows")]
         lines += [_window(window, found.panes) for window in found.windows]
-        agents = [pane for pane in found.panes if pane.is_agent]
-        pane = min(agents, key=lambda a: ps.URGENCY.index(a.state)) if agents else found.active
-        last = _last(pane.id, height - len(lines) - 2)
+        picked = next((each for each in found.panes if each.id == pane), None)
+        agents = [each for each in found.panes if each.is_agent]
+        shown = picked or tmux.most_urgent(agents) or found.active
+        last = _last(shown.id, height - len(lines) - 2)
         if last is not None:
-            lines += ["", sgr(DIM, describe(pane) if pane.is_agent else _plain(pane)), *last]
+            lines += ["", sgr(DIM, describe(shown) if shown.is_agent else _plain(shown)), *last]
     return "".join(f"{line}\n" for line in lines)
 
 
@@ -63,12 +65,14 @@ def layout(session: str) -> Layout | None:
     path, windows, panes, active = "", {}, [], None
     for line in (out or "").splitlines():
         fields = line.split("\t", len(FIELDS) - 1)
-        if len(fields) != len(FIELDS) or not fields[1].isdecimal():
+        if len(fields) != len(FIELDS) or not (fields[1].isdecimal() and fields[3].isdecimal()):
             continue
-        path, index, window_on, pane_id, pane_on, command, *options, name = fields
+        path, window, window_on, index, pane_id, pane_on, command, *options, name = fields
         role, turn, pending, _, agent = options
         keys = ps.decode_pending(pending)
-        pane = Pane(session, int(index), pane_id, command, role, turn, keys, agent=agent)
+        pane = Pane(
+            session, int(window), pane_id, command, role, turn, keys, agent=agent, index=int(index)
+        )
         windows.setdefault(pane.window, Window(pane.window, name, window_on == "1"))
         panes.append(pane)
         if window_on == pane_on == "1":

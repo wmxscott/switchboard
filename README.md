@@ -34,9 +34,9 @@ The picker draws its icons from a [Nerd Font](https://www.nerdfonts.com): the sk
 
 - **Repo headers** show the repo's name, or its [label](#project-labels), and how many of its sessions need you, are done or are working. A caret pointing down is open, and one pointing right is folded.
 - **Worktree rows** show the branch (in "other", the session's name), its git status and the most urgent agent's state. `~2` is two uncommitted changes, and `↑3` is three commits not pushed. A green circled dot marks the session you're in, and the cursor starts there.
-- **Agent rows** sit under their worktree, in a softer colour, each starting with its state's dot. Each names the agent by its label, `claude`, `codex` or `pi`, or `teammate` for an agent-team teammate in its own pane, then the window it's in.
+- **Agent rows** sit under their worktree, in a softer colour, each starting with its state's dot. Each names the agent by its label, `claude`, `codex` or `pi`, or `teammate` for an agent-team teammate in its own pane, then the window it's in. Enter on one lands on its pane.
 - **Order:** repos alphabetically, then "other" for sessions outside any repo. Within a repo, the default branch comes first, then the rest alphabetically.
-- **The preview** on the right shows the session's folder, its windows with an agent's icon on the window that holds it, and the last lines of its most urgent agent's pane, or of its active pane when it has no agents. So you can see what an agent is asking before you switch.
+- **The preview** on the right shows the session's folder, its windows with an agent's icon on the window that holds it, and the last lines of the pane Enter [lands on](#where-enter-lands), or of its active pane when it has no agents. So you can see what an agent is asking before you switch.
 
 Git status is read for every worktree at once, with a one-second limit. A slow or broken repo shows no status rather than holding up the list.
 
@@ -49,10 +49,23 @@ The picker's colours are Catppuccin Latte in light mode and Macchiato in dark mo
 | `j` / `k` | Move |
 | `/` | Search. After that, `j`, `k` and `q` type letters, and the arrow keys move |
 | Tab | Fold or unfold the highlighted row's repo |
-| Enter | Switch to the highlighted session. On an agent row, its session. On a repo header, nothing |
+| Enter | Switch to the highlighted session, onto the pane of [one of its agents](#where-enter-lands). On an agent row, onto that agent's pane. On a repo header, nothing |
 | `q` / Esc | Close. While searching, Esc clears the search and goes back to `j` and `k` |
 
 The header shows the keys that work at the moment, and changes when you search.
+
+### Where Enter lands
+
+Picking a session lands on one of its agents' panes, every time, even when nothing needs you. tmux switches to the session and selects that agent's window and pane. With several agents, teammates included, it picks:
+
+1. **The most urgent:** needs you, then done, then working, then idle.
+2. **On a tie,** the lead before a teammate.
+3. **Then** the lowest window, then the lowest pane in it.
+
+- **An agent row** lands on that agent's pane.
+- **A session with no agents** switches to it as before, onto the window it was on.
+- **A pane that has closed** since the list was drawn, as when its agent exits, switches to its session instead.
+- **The sidebar** lands the same way.
 
 ## The sidebar
 
@@ -70,7 +83,7 @@ The header shows the keys that work at the moment, and changes when you search.
 - **It shows** the picker's list, compact: repo headers, and worktree rows with their state dot. Agents fold into the dot. There are no counts, no git status and no preview, and long names are cut short with `…`.
 - **A folded repo** shows the dot of its most urgent state after its name, so a fold never hides a session that needs you. An open repo's header has no dot.
 - **The keys** are the picker's: `j`/`k`, `/` to search, Tab to fold, and Enter or a double click to switch. Nothing in the sidebar closes it: `q` does nothing, and Esc only leaves a search. Close it with `prefix b` again, or Ctrl-C.
-- **Enter switches** the client viewing the sidebar to the highlighted session. The sidebar stays in its window: it doesn't follow you to the other session.
+- **Enter switches** the client viewing the sidebar to the highlighted session, onto its agent's pane as in [the picker](#where-enter-lands). The sidebar stays in its window: it doesn't follow you to the other session, or to another window of its own.
 - **It redraws live.** Every state change, every switch of session, and every `switchboard refresh` asks each open sidebar to reload. So does each session created or closed, with the hooks in [tmux setup](#tmux-setup). There's no polling.
 
 Each sidebar's fzf listens on a local port, which it records with a random key in its pane's `@switchboard-sidebar` option. That option is also how `prefix b` finds the window's sidebar. A pane it has just opened holds `starting` until fzf records its port, and keeps the window's layout from before it in `@switchboard-layout`. If you split or close a pane while the sidebar is open, that layout no longer fits, and closing the sidebar leaves the widths as they are.
