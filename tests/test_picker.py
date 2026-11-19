@@ -247,6 +247,7 @@ def test_keys(picking):
     assert "--prompt=> " in args
     assert f"--header={header(HINTS)}" in args
     assert "--preview-window=right,60%,border-left,noinfo" in args
+    assert "--highlight-line" not in args
     assert not [arg for arg in args if arg.startswith("--color")]
     keys = bindings(args)
     assert args[args.index(KEYS) - 1] == "--bind"

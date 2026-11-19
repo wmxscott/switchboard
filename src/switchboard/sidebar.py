@@ -19,6 +19,7 @@ import contextlib
 import dataclasses
 import json
 import os
+import re
 import shlex
 import shutil
 import socket
@@ -50,6 +51,7 @@ LAND = (
 HEAD, ROW, CARD, MORE = "head", "row", "card", "more"
 LISTED = (HEAD, ROW)
 EDGE = 3  # fzf's pointer and marker columns, and the one it keeps for a scrollbar
+STYLES = re.compile(r"\x1b\[[0-9;]*m")
 
 
 def show() -> int:
@@ -151,12 +153,13 @@ def fzf_args(folder: str) -> list[str]:
     """The picker's keys without its hints, and nothing closes it: `q` does nothing, and so does
     Esc outside a search. Enter and a double click switch, through a binding that never accepts.
     `j` and `k` step over the gap above any cards, `g` and `G` go to either end, and a resize fits
-    the gap again."""
+    the gap again. The current item is highlighted across every column but the scrollbar's."""
     switch = shlex.join([*picker.command(), "__switch"])
     listen = shlex.join([*picker.command(), "__listen"])
     again = shlex.join([*picker.command(), "__rows0", folder])
     return [
         *picker.list_args(folder, None, KEYS, ("", ""), "ignore", read0=True, held=HELD),
+        "--highlight-line",
         f"--listen={HOST}:0",
         "--bind",
         f"start:execute-silent:{listen}",
@@ -200,12 +203,23 @@ def redraw(folder: str) -> str:
 def rows(folder: str) -> str:
     """The list cached in `folder`, then any cards, fitted to fzf's rows and columns."""
     groups, folded = picker.cached(folder)
-    listed = list(picker.lines(groups, folded))
     height, columns = _size()
+    listed = [_placed(line, columns - EDGE) for line in picker.lines(groups, folded)]
     stack = cards.stack(_cards(folder), height - len(listed), columns - EDGE)
     shown = [*listed, *stack]
     _aim(folder, [_key(item, groups) for item in shown])
     return "".join(f"{item}\0" for item in shown)
+
+
+def _placed(line: str, width: int) -> str:
+    """A compact line, with any dot it has in the last but one of fzf's `width` columns, so that a
+    blank column keeps it off the highlight's edge. Short of room, it stays where it is."""
+    session, pane, group, display = line.split("\t", 3)
+    text, apart, dot = display.partition(picker.APART)
+    if not apart:
+        return line
+    space = " " * (width - 1 - len(STYLES.sub("", text + dot)))
+    return f"{session}\t{pane}\t{group}\t{text}{space}{dot}"
 
 
 Key = tuple[str, ...]

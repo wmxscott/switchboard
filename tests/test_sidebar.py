@@ -96,18 +96,35 @@ def fixture() -> Model:
     return Model((gadget(), widget()), other)
 
 
-COMPACT = [
+WIDTH = 29  # 32 columns, less fzf's pointer, marker and scrollbar
+
+
+def edged(text: str, dot: str, width: int = WIDTH) -> str:
+    """`text`, then `dot` in the last but one of `width` columns, or straight after `text` when
+    there's no room."""
+    return text.ljust(width - 2) + dot
+
+
+LISTED = [
     ("", "", "0", f"{OPEN} gadget"),
-    ("gadget", "%3", "0", f"│   main     {FILL}"),
+    ("gadget", "%3", "0", "│   main     ", FILL),
     ("", "", "1", f"{OPEN} W tools/widget"),
-    ("w/main", "%1", "1", f"│ {HERE} main     {FILL}"),
-    ("w/feat/x", "%1", "1", f"│   feat/x   {FILL}"),
+    ("w/main", "%1", "1", f"│ {HERE} main     ", FILL),
+    ("w/feat/x", "%1", "1", "│   feat/x   ", FILL),
     ("w/zed", "", "1", "│   zed"),
     ("", "", "2", f"{OPEN} other"),
-    ("scratch", "%9", "2", f"│   scratch  {DOT}"),
+    ("scratch", "%9", "2", "│   scratch  ", DOT),
     ("home", "", "2", "│   home"),
 ]
-WIDTH = 29  # 32 columns, less fzf's pointer, marker and scrollbar
+
+
+def compact(width: int = WIDTH) -> list[tuple[str, ...]]:
+    """The compact list as the sidebar shows it in `width` columns."""
+    return [(*item[:3], edged(*item[3:], width)) if item[4:] else item for item in LISTED]
+
+
+COMPACT = compact()
+SHUT_W = ("", "", "1", edged(f"{SHUT} W tools/widget ", FILL))
 GADGET = ("gadget", "%3", "", "✓ gadget · claude\n  done")
 W_MAIN = ("w/main", "%1", "", "▲ w/main · claude\n  needs you")
 
@@ -145,15 +162,18 @@ def sh(command: str, **env: str) -> str:
 
 
 def test_the_compact_list_has_worktrees_and_their_dots_only():
+    """Each dot is a field of its own, for the sidebar to place."""
     groups = picker.render(fixture(), "w/main", compact=True)
-    assert fields(picker.lines(groups)) == COMPACT
+    assert fields(picker.lines(groups)) == LISTED
     assert [group["title"] for group in groups] == ["gadget", "W tools/widget", "other"]
-    lines = [line.split("\t")[3] for line in picker.lines(groups)]
-    assert lines[0] == f"{esc(TEXT, OPEN)} {esc(f'1;{TEXT}', 'gadget')}"
-    assert lines[3].startswith(f"{esc(OVERLAY, '│')} {esc(f'1;{GREEN}', HERE)} {esc(TEXT, 'main')}")
-    assert lines[3].endswith(esc(RED, FILL))
-    assert lines[4].endswith(esc(PEACH, FILL))
-    assert lines[7].endswith(esc(GREEN, DOT))
+    lines = [line.split("\t")[3:] for line in picker.lines(groups)]
+    assert lines[0] == [f"{esc(TEXT, OPEN)} {esc(f'1;{TEXT}', 'gadget')}"]
+    assert lines[3][0].startswith(
+        f"{esc(OVERLAY, '│')} {esc(f'1;{GREEN}', HERE)} {esc(TEXT, 'main')}"
+    )
+    assert lines[3][1] == esc(RED, FILL)
+    assert lines[4][1] == esc(PEACH, FILL)
+    assert lines[7][1] == esc(GREEN, DOT)
 
 
 def test_the_compact_list_cuts_long_names_short_to_keep_the_dots():
@@ -161,8 +181,8 @@ def test_the_compact_list_cuts_long_names_short_to_keep_the_dots():
     found = Model(
         (Repo("/w", "w", "main", (worktree("w/long", long, "/w", (1, "lead", "done")),)),)
     )
-    shown = fields(picker.lines(picker.render(found, "", compact=True)))[1][3]
-    assert shown == f"│   {long[: picker.NARROW - 1]}…  {FILL}"
+    shown = fields(picker.lines(picker.render(found, "", compact=True)))[1][3:]
+    assert shown == (f"│   {long[: picker.NARROW - 1]}…  ", FILL)
     assert fields(picker.lines(picker.render(found, "")))[1][3].startswith(f"│   {long}  ")
 
 
@@ -176,16 +196,16 @@ def test_a_folded_repo_shows_its_most_urgent_dot():
     plainer = Repo("/p", "plain", "main", (worktree("p", "main", "/p"),))
     found = Model((gadget(), widget(), plainer), fixture().other)
     groups = picker.render(found, "w/main", compact=True)
-    shut = [line.split("\t")[3] for line in picker.lines(groups, folded=range(4))]
-    assert [plain(line) for line in shut] == [
-        f"{SHUT} gadget {FILL}",
-        f"{SHUT} W tools/widget {FILL}",
-        f"{SHUT} plain",
-        f"{SHUT} other {DOT}",
+    shut = [line.split("\t")[3:] for line in picker.lines(groups, folded=range(4))]
+    assert [[plain(part) for part in line] for line in shut] == [
+        [f"{SHUT} gadget ", FILL],
+        [f"{SHUT} W tools/widget ", FILL],
+        [f"{SHUT} plain"],
+        [f"{SHUT} other ", DOT],
     ]
-    assert shut[0].endswith(f" {esc(GREEN, FILL)}")
-    assert shut[1].endswith(f" {esc(RED, FILL)}")
-    assert shut[3].endswith(f" {esc(GREEN, DOT)}")
+    assert shut[0][1] == esc(GREEN, FILL)
+    assert shut[1][1] == esc(RED, FILL)
+    assert shut[3][1] == esc(GREEN, DOT)
 
 
 def test_a_long_title_is_cut_short_to_keep_a_folded_repo_s_dot():
@@ -194,9 +214,8 @@ def test_a_long_title_is_cut_short_to_keep_a_folded_repo_s_dot():
         (Repo("/w", long, "main", (worktree("w/a", "main", "/w", (1, "lead", "done")),)),)
     )
     groups = picker.render(found, "", compact=True)
-    shut = fields(picker.lines(groups, folded=[0]))[0][3]
-    assert shut == f"{SHUT} {long[:22]}… {FILL}"
-    assert len(shut) == 27
+    shut = fields(picker.lines(groups, folded=[0]))[0][3:]
+    assert shut == (f"{SHUT} {long[:22]}… ", FILL)
     assert fields(picker.lines(groups))[0][3] == f"{OPEN} {long[:22]}…"
     assert groups[0]["title"] == long
     assert fields(picker.lines(picker.render(found, "")))[0][3].startswith(f"{OPEN} {long}  ")
@@ -247,6 +266,30 @@ def test_keys_and_look(inside):
     assert fields(items(call["stdin"])) == [*COMPACT, gap(30 - 9 - 3), GADGET]
 
 
+def test_the_current_line_is_highlighted_across_and_each_dot_keeps_off_its_edge(inside):
+    """fzf fills the current item's lines to its `WIDTH` columns, and a dot sits in the last but
+    one of them."""
+    stubs = inside
+    stubs.fzf.reply(code=130)
+    cli.main(["sidebar"])
+    call = opened(stubs)
+    assert "--highlight-line" in call["args"]
+    shown = [item[3] for item in fields(items(call["stdin"]))]
+    assert shown[3] == f"│ {HERE} main{' ' * 19}{FILL}"
+    dotted = [text for text in shown if text.endswith((FILL, DOT))]
+    assert [len(text) for text in dotted] == [WIDTH - 1] * 4
+
+
+def test_the_longest_name_and_title_keep_their_cuts_and_a_space_before_the_dot(tmp_path, sized):
+    long = "x" * 40
+    row = worktree("w/long", "feat/" + long, "/w", (1, "lead", "done"))
+    groups = picker.render(Model((Repo("/w", long, "main", (row,)),)), "", compact=True)
+    (tmp_path / picker.MODEL).write_text(json.dumps(groups))
+    assert fields(items(sidebar.rows(str(tmp_path))))[1][3] == f"│   feat/{long[:14]}…   {FILL}"
+    (tmp_path / picker.FOLDED).write_text("[0]")
+    assert fields(items(sidebar.rows(str(tmp_path))))[0][3] == f"{SHUT} {long[:22]}…  {FILL}"
+
+
 @pytest.mark.parametrize(("keys", "move"), [("j,down", "down"), ("k,up", "up")])
 def test_j_and_k_step_over_the_gap(keys, move):
     """fzf's side: the move, then a transform on the item it lands on."""
@@ -284,8 +327,8 @@ def test_with_no_cards_the_sidebar_is_the_list_alone(inside, monkeypatch):
     calm = Model((widget(),), fixture().other)
     monkeypatch.setattr(model, "load", lambda: calm)
     cli.main(["sidebar"])
-    listed = list(picker.lines(picker.render(calm, "w/main", compact=True)))
-    assert items(opened(stubs)["stdin"]) == listed
+    shown = fields(items(opened(stubs)["stdin"]))
+    assert [item[3] for item in shown] == [item[3] for item in COMPACT[2:]]
 
 
 def test_enter_on_a_card_lands_on_its_agents_pane(stubs, monkeypatch, sized, tmp_path):
@@ -317,16 +360,26 @@ def test_a_fold_or_a_resize_fits_the_stack_again(stubs, monkeypatch, sized, tmp_
     assert fields(items(sh(resize))) == [*COMPACT, gap(20 - 9 - 3), GADGET]
     tab = keys["tab"].removeprefix("transform:")
     reload = sh(tab.replace("{3}", "'1'"), FZF_INPUT_STATE="hidden").partition("+reload:")[2]
-    folded = [*COMPACT[:2], ("", "", "1", f"{SHUT} W tools/widget {FILL}"), *COMPACT[6:]]
-    assert fields(items(sh(reload))) == [*folded, gap(20 - 6 - 3), GADGET]
+    assert fields(items(sh(reload))) == [
+        *COMPACT[:2],
+        SHUT_W,
+        *COMPACT[6:],
+        gap(20 - 6 - 3),
+        GADGET,
+    ]
+    narrow = compact(19)
     assert fields(items(sh(resize, FZF_LINES="8", FZF_COLUMNS="22"))) == [
-        *folded,
+        *narrow[:2],
+        ("", "", "1", edged(f"{SHUT} W tools/widget ", FILL, 19)),
+        *narrow[6:],
         ("", "", cards.GAP, "─" * 19),
         ("gadget", "%3", "", "✓ gadget · claude\n  done"),
     ]
+    assert fields(items(sh(resize, FZF_COLUMNS="44")))[1][3] == edged("│   main", FILL, 41)
+    assert fields(items(sh(resize, FZF_COLUMNS="16")))[1][3] == f"│   main     {FILL}"
 
 
-def test_tab_folds_through_the_hidden_commands_and_reloads_nul_separated_items(tmp_path):
+def test_tab_folds_through_the_hidden_commands_and_reloads_nul_separated_items(tmp_path, sized):
     """fzf's side, done by hand: run the Tab binding, then the reload it asks for."""
     (tmp_path / picker.MODEL).write_text(json.dumps(picker.render(fixture(), "", compact=True)))
     tab = bindings(sidebar.fzf_args(str(tmp_path)))["tab"].removeprefix("transform:")
@@ -334,11 +387,7 @@ def test_tab_folds_through_the_hidden_commands_and_reloads_nul_separated_items(t
     position, _, reload = actions.strip().partition("+reload:")
     assert position == "pos(3)"
     assert shlex.split(reload) == [*SELF, "__rows0", str(tmp_path)]
-    assert fields(items(sh(reload))) == [
-        *COMPACT[:2],
-        ("", "", "1", f"{SHUT} W tools/widget {FILL}"),
-        *COMPACT[6:],
-    ]
+    assert fields(items(sh(reload))) == [*COMPACT[:2], SHUT_W, *COMPACT[6:]]
 
 
 def test_no_key_closes_it(inside):
@@ -501,10 +550,10 @@ def test_redraw_rebuilds_the_list_and_keeps_folded_repos_folded(
     out = sidebar.redraw(str(folder))
     assert fields(items(out)) == [
         ("", "", "0", f"{OPEN} alpha"),
-        ("alpha", "%1", "0", f"│ {HERE} main    {FILL}"),
+        ("alpha", "%1", "0", edged(f"│ {HERE} main", FILL)),
         ("", "", "1", f"{OPEN} gadget"),
-        ("gadget", "%3", "1", f"│   main    {FILL}"),
-        ("", "", "2", f"{SHUT} W tools/widget {FILL}"),
+        ("gadget", "%3", "1", edged("│   main", FILL)),
+        ("", "", "2", edged(f"{SHUT} W tools/widget", FILL)),
         gap(20 - 5 - 5),
         GADGET,
         W_MAIN,
@@ -662,7 +711,7 @@ def test_tab_keeps_the_cursor_on_the_folded_header_once_the_list_lands(folder, m
     position, _, reload = actions.strip().partition("+reload:")
     assert position == "pos(3)"
     shown = fields(items(sh(reload, FZF_POS="3")))
-    assert shown[moved(folder, 3, len(shown)) - 1][2:] == ("1", f"{SHUT} W tools/widget {FILL}")
+    assert shown[moved(folder, 3, len(shown)) - 1] == SHUT_W
 
 
 def test_a_list_moves_the_cursor_once_and_never_while_a_search_filters_it(folder, monkeypatch):
