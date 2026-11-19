@@ -105,11 +105,11 @@ def _write(sessions: Sequence[Session], panes: Sequence[Pane]) -> None:
 
 
 def _entry(name: str, counts: Counter[str], group: str) -> list[tuple[str, str]]:
-    marks = [(COLOUR[s], MARK[s] + _superscript(counts[s])) for s in SHOWN if counts[s]]
+    marks = [(COLOUR[s], MARK[s] + superscript(counts[s])) for s in SHOWN if counts[s]]
     return [*marks, (COLOUR[group], f" {name}")]
 
 
-def _superscript(n: int) -> str:
+def superscript(n: int) -> str:
     return str(n).translate(SUPERSCRIPT) if n > 1 else ""
 
 
