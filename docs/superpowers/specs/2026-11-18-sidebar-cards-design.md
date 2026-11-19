@@ -1,6 +1,6 @@
 # switchboard: agent cards in the sidebar
 
-**Status:** draft, waiting for the user's approval. The builder check is done (2026-11-18), and its questions are answered here.
+**Status:** approved by the user on 2026-11-18. The builder check is done, and its questions are answered here. The live plan is [docs/plans/toqdop-sidebar-cards.md](../../plans/toqdop-sidebar-cards.md).
 
 ## Why
 
