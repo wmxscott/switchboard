@@ -85,6 +85,23 @@ def test_one_line_is_capped():
     assert ps.CAP == 200
 
 
+@pytest.mark.parametrize(
+    ("text", "line"),
+    [
+        ("Fix the login bug\n\nIt fails on Safari.", "Fix the login bug"),
+        ("\n  \r\n  add tests\r\nthen lint", "  add tests"),
+        ("one line", "one line"),
+        ("", ""),
+        ("\n\t\n", ""),
+        (None, ""),
+        (42, ""),
+        (["fix it"], ""),
+    ],
+)
+def test_first_line(text, line):
+    assert ps.first_line(text) == line
+
+
 TRICKY = 'a, b; c=d #{e} "f" \\ ▲ ;'
 
 

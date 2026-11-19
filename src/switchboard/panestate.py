@@ -60,6 +60,12 @@ def one_line(text: str) -> str:
     return " ".join(kept.split())[:CAP].rstrip()
 
 
+def first_line(text: object) -> str:
+    """The first line of `text` that isn't blank, as a prompt's line; "" without one."""
+    lines = text.splitlines() if isinstance(text, str) else []
+    return next((line for line in lines if line.strip()), "")
+
+
 def encode_reasons(reasons: Mapping[str, str]) -> str:
     return json.dumps(dict(reasons), ensure_ascii=False, separators=(",", ":")) if reasons else ""
 

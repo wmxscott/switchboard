@@ -1,16 +1,19 @@
 """Pi: the events the ai-toolkit extension forwards, each with its fields on stdin.
 
-A dialog pends as `ui`, however many are nested, and a Plannotator session by its id.
+A dialog pends as `ui`, however many are nested, and a Plannotator session by its id. A dialog's
+reason is its `title`, else its `kind`, and `input` carries the prompt's `text`.
 """
 
 from __future__ import annotations
 
 from switchboard import core
+from switchboard import panestate as ps
 
 UI = "ui"
 PLANNOTATOR = frozenset({"plannotator_opened", "plannotator_closed"})
 HANDLED = PLANNOTATOR | {
     "session_start",
+    "input",
     "agent_start",
     "ui_prompt_start",
     "ui_prompt_end",
@@ -31,14 +34,18 @@ def verbs(event: str, payload: dict, state: core.State) -> list[core.Verb]:
     match event:
         case "session_start":
             return [core.START, *([core.WORKING] if payload.get("idle") is False else [])]
+        case "input":
+            # Only the task: an extension can handle the input itself, and then no run starts.
+            return [core.working(ps.first_line(payload.get("text"))), *_kept(state.turn)]
         case "agent_start":
             return [core.WORKING]
         case "ui_prompt_start":
-            return [core.needs(UI)]
+            why = ps.first_line(payload.get("title")) or ps.first_line(payload.get("kind"))
+            return [core.needs(UI, why)]
         case "ui_prompt_end":
             return [core.resolve(UI)]
         case "plannotator_opened":
-            return [core.needs(_id(payload))]
+            return [core.needs(_id(payload), "plan ready for review")]
         case "plannotator_closed":
             return [core.resolve(_id(payload))]
         case "agent_settled" if payload.get("aborted"):
@@ -46,6 +53,13 @@ def verbs(event: str, payload: dict, state: core.State) -> list[core.Verb]:
         case "agent_settled":
             return [core.DONE, core.RESOLVE_ALL]
     return []
+
+
+def _kept(turn: str) -> list[core.Verb]:
+    """The verbs that put `turn` back after `core.working`."""
+    if turn == ps.WORKING:
+        return []
+    return [core.DONE] if turn == ps.DONE else [core.IDLE]
 
 
 def _id(payload: dict) -> str:

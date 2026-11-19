@@ -392,13 +392,16 @@ The verbs, from `switchboard.core`:
 
 | Verb | Does |
 |---|---|
-| `START` | A new agent process: a lead, idle, with nothing pending |
-| `WORKING`, `IDLE` | Set the turn |
-| `DONE` | Set the turn done, or idle when a client is viewing the session or the pane is a teammate |
-| `needs(key)` | Add a pending prompt. The agent needs you while any is pending. The key is `lead` for the agent's own, or a subagent's id |
+| `START` | A new agent process: a lead, idle, with nothing pending and no task |
+| `WORKING`, `IDLE` | Set the turn, keeping its task |
+| `working(task)` | Set the turn working, with its task: the line of the prompt that started it |
+| `DONE` | Set the turn done, or idle when a client is viewing the session or the pane is a teammate. The task is kept |
+| `needs(key, reason)` | Add a pending prompt, with why it needs you. The agent needs you while any is pending. The key is `lead` for the agent's own, or a subagent's id |
 | `resolve(key)` | Remove a pending prompt. `RESOLVE_ALL` removes every one |
 | `TEAMMATE` | Mark the pane an agent-team teammate |
 | `END` | The agent has gone: unset every `@switchboard-*` option |
+
+**Reasons and the task.** An agent's card says why it needs you, such as `run: npm test`, or what it finished, from its task. The adapter gives both, from the event's payload: a reason with `needs(key, reason)`, and the prompt's first line with `working(task)`. Pass the text as it comes, and switchboard makes it one line and caps it. Pass `""` when a field is missing or isn't a string, so a renamed field gives a plain card, `needs you` or `done`, and never an error. The same reason again for a pending key changes nothing, but a new one replaces it and counts as a new prompt, so a repeated event mustn't swap a reason for a vaguer one.
 
 For example, `src/switchboard/agents/acme.py`, for an agent whose plugin sends `start`, `prompt`, `ask`, `answer`, `stop` and `exit`:
 
@@ -408,6 +411,7 @@ For example, `src/switchboard/agents/acme.py`, for an agent whose plugin sends `
 from __future__ import annotations
 
 from switchboard import core
+from switchboard import panestate as ps
 
 HANDLED = frozenset({"start", "prompt", "ask", "answer", "stop", "exit"})
 
@@ -421,9 +425,9 @@ def verbs(event: str, payload: dict, state: core.State) -> list[core.Verb]:
         case "start":
             return [core.START]
         case "prompt":
-            return [core.WORKING, core.RESOLVE_ALL]
+            return [core.working(ps.first_line(payload.get("text"))), core.RESOLVE_ALL]
         case "ask":
-            return [core.needs("lead")]
+            return [core.needs("lead", ps.first_line(payload.get("question")))]
         case "answer":
             return [core.resolve("lead")]
         case "stop":
@@ -431,7 +435,7 @@ def verbs(event: str, payload: dict, state: core.State) -> list[core.Verb]:
     return []
 ```
 
-`claude.py`, `codex.py` and `pi.py` in the same folder are fuller examples. `codex.py` reuses Claude's mapping and changes only what differs, and its `Interrupt` reads `state.turn`.
+`ps.first_line` is the first line of a string that isn't blank, and `""` for anything else. `claude.py`, `codex.py` and `pi.py` in the same folder are fuller examples. `codex.py` reuses Claude's mapping and changes only what differs, and its `Interrupt` reads `state.turn`.
 
 ### Registering it
 
@@ -450,9 +454,10 @@ There's no list to add it to. `switchboard hook --agent acme` imports `switchboa
 An adapter's tests go in `tests/agents/test_<name>.py`. The `drive` fixture in `tests/agents/conftest.py` sends events through `switchboard hook --agent <name>`, against stub `tmux` and `ps`:
 
 - **`drive(name, field)`** returns a `Driver` for the agent, whose payloads carry the event's name in `field`.
-- **`stored(state, viewed=False, inside=True)`** sets the pane's stored state, written `role:turn:pending`, as in `lead:working:lead`. `viewed` puts a client on the pane's session, and `inside=False` runs the hook outside the pane.
+- **`stored(state, viewed=False, inside=True, reasons=None, task="")`** sets the pane's stored state, written `role:turn:pending`, as in `lead:working:lead`. `viewed` puts a client on the pane's session, and `inside=False` runs the hook outside the pane. `reasons`, a dict of key to reason, and `task` are stored too.
 - **`fire(event, **fields)`** sends the event, with `fields` in its payload.
 - **`after()`** is the state written, or `None` for no write. It also checks that the write labels the pane with the agent.
+- **`reasons()` and `task()`** are the reasons and the task written, or `None` for no write.
 - **`written()`, `calls()` and `alerts()`** return the options written, the tmux calls and the alerts sent.
 
 ```python

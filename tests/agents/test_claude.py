@@ -28,11 +28,18 @@ SCRIPT = os.path.join(os.path.dirname(sys.executable), "switchboard")
 A1 = {"agent_id": "a1"}
 
 
-def stored(stubs, state: str = "lead:working:", viewed: bool = False) -> None:
-    """What the stub tmux answers the hook's read with: the pane is in `work`, and two clients
-    are elsewhere, or one of them is on `work` when `viewed`."""
+def stored(
+    stubs,
+    state: str = "lead:working:",
+    viewed: bool = False,
+    reasons: dict[str, str] | None = None,
+    task: str = "",
+) -> None:
+    """What the stub tmux answers the hook's read with: the pane is in `work`, holding `reasons`
+    and `task`, and two clients are elsewhere, or one of them is on `work` when `viewed`."""
+    why = panestate.encode_reasons(reasons or {})
     lines = [
-        "work\t" + state.replace(":", "\t") + "\t\t",
+        "work\t" + state.replace(":", "\t") + f"\t{why}\t{panestate.encode_task(task)}",
         "/dev/ttys001\t" + ("work" if viewed else "elsewhere"),
         "/dev/ttys002\tother",
     ]
@@ -82,6 +89,16 @@ def after(stubs) -> str | None:
     assert abs(int(options["@switchboard-at"]) - time.time()) < 60
     names = ("@switchboard-role", "@switchboard-turn", "@switchboard-pending")
     return ":".join(options[name] or "" for name in names)
+
+
+def reasons(stubs) -> dict[str, str] | None:
+    options = written(stubs)
+    return options and panestate.decode_reasons(options[panestate.REASONS] or "")
+
+
+def task(stubs) -> str | None:
+    options = written(stubs)
+    return options and panestate.decode_task(options[panestate.TASK] or "")
 
 
 MAPPING = [
@@ -222,6 +239,221 @@ def test_a_failed_read_writes_nothing(stubs, answer):
     stubs.tmux.answer("display-message", **answer)
     fire("Stop")
     assert stubs.tmux.calls() == [READ]
+
+
+CWD = "/Users/me/src/app"
+SESSION = {
+    "session_id": "3f1c9e2a-7b4d-4e0a-9c1f-2d8e6b5a4c3d",
+    "transcript_path": "/Users/me/.claude/projects/-Users-me-src-app/3f1c9e2a.jsonl",
+    "cwd": CWD,
+    "permission_mode": "default",
+}
+SUGGESTIONS = [
+    {
+        "type": "addRules",
+        "rules": [{"toolName": "Bash", "ruleContent": "npm test"}],
+        "behavior": "allow",
+        "destination": "localSettings",
+    }
+]
+QUESTIONS = [
+    {
+        "question": "Which library should we use for dates?",
+        "header": "Library",
+        "options": [
+            {"label": "date-fns", "description": "Small and modular"},
+            {"label": "Luxon", "description": "Time zones built in"},
+        ],
+        "multiSelect": False,
+    },
+    {
+        "question": "Keep the old API?",
+        "header": "API",
+        "options": [{"label": "Yes", "description": ""}, {"label": "No", "description": ""}],
+        "multiSelect": False,
+    },
+]
+PLAN = "# Plan\n\n1. Add the flag.\n2. Test it."
+ASKS = "asks: Which library should we use for dates?"
+
+
+def permission(tool: str, **tool_input) -> dict:
+    """A `PermissionRequest` as Claude Code sends it."""
+    return {
+        **SESSION,
+        "hook_event_name": "PermissionRequest",
+        "tool_name": tool,
+        "tool_input": tool_input,
+        "permission_suggestions": SUGGESTIONS,
+    }
+
+
+def pre_tool(tool: str, **tool_input) -> dict:
+    return {
+        **SESSION,
+        "hook_event_name": "PreToolUse",
+        "tool_name": tool,
+        "tool_input": tool_input,
+        "tool_use_id": "toolu_01AbCdEfGh",
+    }
+
+
+def notification(kind: str, message: object) -> dict:
+    return {
+        **SESSION,
+        "hook_event_name": "Notification",
+        "message": message,
+        "title": "Claude Code",
+        "notification_type": kind,
+    }
+
+
+def prompt(text: object, **fields) -> dict:
+    return {**SESSION, "hook_event_name": "UserPromptSubmit", "prompt": text, **fields}
+
+
+def without(payload: dict, *names: str) -> dict:
+    return {name: value for name, value in payload.items() if name not in names}
+
+
+REASONS = [
+    (permission("Bash", command="npm test", description="Run the tests"), "run: npm test"),
+    (
+        permission("Bash", command="git add -A &&\n  git commit -m 'wip'", description="Commit"),
+        "run: git add -A && git commit -m 'wip'",
+    ),
+    (
+        permission("Edit", file_path=f"{CWD}/src/app.py", old_string="a", new_string="b"),
+        "edit: src/app.py",
+    ),
+    (permission("MultiEdit", file_path=f"{CWD}/src/app.py", edits=[]), "edit: src/app.py"),
+    (permission("Write", file_path=f"{CWD}/README.md", content="# App\n"), "write: README.md"),
+    (permission("Read", file_path="/etc/hosts"), "read: /etc/hosts"),
+    (permission("Trash", file_path=f"{CWD}/old.txt"), "trash: old.txt"),
+    (permission("Edit", file_path=None), "Edit"),
+    (permission("WebFetch", url="https://example.com", prompt="Summarise"), "WebFetch"),
+    (permission("mcp__github__create_issue", repo="app", title="Bug"), "mcp__github__create_issue"),
+    (permission("ExitPlanMode", plan=PLAN), "plan ready for review"),
+    (permission("AskUserQuestion", questions=QUESTIONS), ASKS),
+    (pre_tool("AskUserQuestion", questions=QUESTIONS), ASKS),
+    (pre_tool("ExitPlanMode", plan=PLAN), "plan ready for review"),
+    (
+        notification("permission_prompt", "Claude needs your permission to use Bash"),
+        "Claude needs your permission to use Bash",
+    ),
+    (
+        notification("elicitation_dialog", 'MCP server "jira" requests your input'),
+        'MCP server "jira" requests your input',
+    ),
+    (
+        notification("elicitation_url_dialog", 'MCP server "auth" asks you to open a URL'),
+        'MCP server "auth" asks you to open a URL',
+    ),
+]
+
+
+@pytest.mark.parametrize(("payload", "reason"), REASONS)
+def test_each_prompt_gives_its_reason(stubs, payload, reason):
+    stored(stubs, "lead:working:")
+    fire(payload["hook_event_name"], **payload)
+    assert after(stubs) == "lead:working:lead"
+    assert reasons(stubs) == {"lead": reason}
+
+
+def test_a_subagents_prompt_gives_its_reason_under_its_key(stubs):
+    stored(stubs, "lead:working:lead", reasons={"lead": "run: npm test"})
+    fire("PreToolUse", **pre_tool("AskUserQuestion", questions=QUESTIONS), agent_id="a1")
+    assert after(stubs) == "lead:working:a1,lead"
+    assert reasons(stubs) == {"lead": "run: npm test", "a1": ASKS}
+
+
+PLAIN = [
+    permission("Bash"),
+    permission("Bash", command=["npm", "test"]),
+    permission("Bash", command="  \n"),
+    {**permission("Bash"), "tool_input": "npm test"},
+    without(permission("Bash", command="npm test"), "tool_name"),
+    {**permission("Edit", file_path=f"{CWD}/a.py"), "tool_name": 7},
+    pre_tool("AskUserQuestion"),
+    pre_tool("AskUserQuestion", questions=[]),
+    pre_tool("AskUserQuestion", questions="Which library?"),
+    pre_tool("AskUserQuestion", questions=[3]),
+    pre_tool("AskUserQuestion", questions=[{"header": "Library"}]),
+    pre_tool("AskUserQuestion", questions=[{"question": ["Which library?"]}]),
+    without(pre_tool("AskUserQuestion"), "tool_input"),
+    without(notification("permission_prompt", ""), "message"),
+    notification("elicitation_dialog", {"text": "Input needed"}),
+]
+
+
+@pytest.mark.parametrize("payload", PLAIN)
+def test_a_missing_or_odd_field_gives_the_plain_reason(stubs, payload):
+    stored(stubs, "lead:working:")
+    fire(payload["hook_event_name"], **payload)
+    assert after(stubs) == "lead:working:lead"
+    assert reasons(stubs) == {"lead": ""}
+
+
+@pytest.mark.parametrize(
+    ("reason", "payload"),
+    [
+        ("run: npm test", notification("permission_prompt", "Claude needs your permission")),
+        ("plan ready for review", permission("ExitPlanMode", plan=PLAN)),
+        (ASKS, permission("AskUserQuestion", questions=QUESTIONS)),
+    ],
+)
+def test_a_repeat_of_a_pending_prompt_writes_nothing(stubs, reason, payload):
+    """A `Notification` repeats a `PermissionRequest`, and a permission check can follow its
+    tool's `PreToolUse`: neither may swap the reason for a vaguer one or move the card."""
+    stored(stubs, "lead:working:lead", reasons={"lead": reason})
+    fire(payload["hook_event_name"], **payload)
+    assert stubs.tmux.calls() == [READ]
+
+
+@pytest.mark.parametrize(
+    ("payload", "expected"),
+    [
+        (prompt("Fix the login bug\n\nIt fails on Safari."), "Fix the login bug"),
+        (prompt("\n\n  add tests for the parser"), "add tests for the parser"),
+        (prompt("Fix it", source="user"), "Fix it"),
+    ],
+)
+def test_a_typed_prompts_first_line_is_the_task(stubs, payload, expected):
+    stored(stubs, "lead:done:", task="Earlier task")
+    fire("UserPromptSubmit", **payload)
+    assert after(stubs) == "lead:working:"
+    assert task(stubs) == expected
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        prompt("Explore the repo", agent_id="a1", agent_type="Explore"),
+        prompt("<task-notification>\n<task-id>b7</task-id>", source="system"),
+    ],
+)
+def test_a_prompt_the_user_did_not_type_keeps_the_task(stubs, payload):
+    stored(stubs, "lead:done:", task="Fix the login bug")
+    fire("UserPromptSubmit", **payload)
+    assert after(stubs) == "lead:working:"
+    assert task(stubs) == "Fix the login bug"
+
+
+@pytest.mark.parametrize(
+    "payload", [prompt(None), prompt(["Fix it"]), prompt(""), without(prompt(""), "prompt")]
+)
+def test_a_prompt_with_no_text_gives_no_task(stubs, payload):
+    stored(stubs, "lead:done:")
+    fire("UserPromptSubmit", **payload)
+    assert after(stubs) == "lead:working:"
+    assert task(stubs) == ""
+
+
+def test_the_turn_done_keeps_its_task(stubs):
+    stored(stubs, "lead:working:", task="Fix the login bug")
+    fire("Stop", **SESSION, hook_event_name="Stop", stop_hook_active=False)
+    assert after(stubs) == "lead:done:"
+    assert task(stubs) == "Fix the login bug"
 
 
 @pytest.fixture

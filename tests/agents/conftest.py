@@ -41,11 +41,20 @@ class Driver:
     pane = PANE
     read = READ
 
-    def stored(self, state: str = "lead:working:", viewed: bool = False, inside: bool = True):
-        """The pane is in `work`, and two clients are elsewhere, or one is on `work`."""
+    def stored(
+        self,
+        state: str = "lead:working:",
+        viewed: bool = False,
+        inside: bool = True,
+        reasons: dict[str, str] | None = None,
+        task: str = "",
+    ):
+        """The pane is in `work`, holding `reasons` and `task`, and two clients are elsewhere, or
+        one is on `work`."""
         pid = INSIDE if inside else OUTSIDE
+        why = panestate.encode_reasons(reasons or {})
         lines = [
-            "work\t" + state.replace(":", "\t") + f"\t\t\t{pid}",
+            "work\t" + state.replace(":", "\t") + f"\t{why}\t{panestate.encode_task(task)}\t{pid}",
             "/dev/ttys001\t" + ("work" if viewed else "elsewhere"),
             "/dev/ttys002\tother",
         ]
@@ -78,6 +87,16 @@ class Driver:
         assert options[panestate.AGENT] == self.agent
         names = (panestate.ROLE, panestate.TURN, panestate.PENDING)
         return ":".join(options[name] or "" for name in names)
+
+    def reasons(self) -> dict[str, str] | None:
+        """The reasons written, None for no write."""
+        options = self.written()
+        return options and panestate.decode_reasons(options[panestate.REASONS] or "")
+
+    def task(self) -> str | None:
+        """The task written, None for no write."""
+        options = self.written()
+        return options and panestate.decode_task(options[panestate.TASK] or "")
 
     def alerts(self) -> list[tuple[str, str]]:
         return [
