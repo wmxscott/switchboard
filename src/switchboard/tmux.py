@@ -21,6 +21,7 @@ SESSION_FIELDS = (
 PANE_FIELDS = (
     "session_name",
     "window_index",
+    "pane_index",
     "pane_id",
     "pane_current_command",
     *panestate.OPTIONS,
@@ -49,6 +50,7 @@ class Pane:
     at: int = 0
     agent: str = ""
     sidebar: str = ""
+    index: int = 0
 
     @property
     def is_agent(self) -> bool:
@@ -75,10 +77,18 @@ def parse_sessions(text: str) -> list[Session]:
 
 
 def parse_panes(text: str) -> list[Pane]:
-    return [
-        Pane(name, _int(win), pid, cmd, role, turn, panestate.decode_pending(keys), _int(at), *rest)
-        for name, win, pid, cmd, role, turn, keys, at, *rest in _rows(text, len(PANE_FIELDS))
-    ]
+    found = []
+    for name, win, index, pid, cmd, role, turn, keys, at, *rest in _rows(text, len(PANE_FIELDS)):
+        pending = panestate.decode_pending(keys)
+        pane = Pane(name, _int(win), pid, cmd, role, turn, pending, _int(at), *rest, _int(index))
+        found.append(pane)
+    return found
+
+
+def most_urgent(agents: Iterable[Pane]) -> Pane | None:
+    """The agent that picking its session lands on: the most urgent, then a lead before a
+    teammate, then the lowest window and pane."""
+    return min(agents, key=_urgency, default=None)
 
 
 def agents_by_session(panes: Iterable[Pane]) -> dict[str, tuple[Pane, ...]]:
@@ -87,6 +97,11 @@ def agents_by_session(panes: Iterable[Pane]) -> dict[str, tuple[Pane, ...]]:
         if pane.is_agent:
             found[pane.session].append(pane)
     return {session: tuple(agents) for session, agents in found.items()}
+
+
+def _urgency(agent: Pane) -> tuple[int, bool, int, int]:
+    rank = panestate.URGENCY.index(agent.state)
+    return rank, agent.role == panestate.TEAMMATE, agent.window, agent.index
 
 
 def _query(command: str, fields: Iterable[str], *flags: str) -> str:

@@ -143,7 +143,7 @@ def cmd_sidebar(args) -> int:
 
 
 def cmd_sidebar_binding(argv: list[str]) -> int:
-    """The sidebar's own fzf bindings: `__listen`, `__redraw` and `__switch <session>`."""
+    """The sidebar's own fzf bindings: `__listen`, `__redraw` and `__switch <session> [pane]`."""
     import os
 
     from switchboard import sidebar
@@ -153,19 +153,21 @@ def cmd_sidebar_binding(argv: list[str]) -> int:
     elif argv[0] == "__redraw":
         sys.stdout.write(sidebar.redraw(os.environ.get(sidebar.FOLDER, "")))
     else:
-        sys.stdout.write(sidebar.switch(argv[1] if len(argv) > 1 else ""))
+        session, pane = [*argv[1:], "", ""][:2]
+        sys.stdout.write(sidebar.switch(session, pane))
     return 0
 
 
 def cmd_preview(args: list[str]) -> int:
-    """The picker's preview, `__preview <session>`, sized by fzf's `$FZF_PREVIEW_LINES`."""
+    """The picker's preview, `__preview <session> [pane]`, sized by fzf's `$FZF_PREVIEW_LINES`."""
     import os
 
     from switchboard import preview
 
     lines = os.environ.get("FZF_PREVIEW_LINES", "")
     height = int(lines) if lines.isdecimal() else preview.HEIGHT
-    sys.stdout.write(preview.show(args[0] if args else "", height))
+    session, pane = [*args, "", ""][:2]
+    sys.stdout.write(preview.show(session, height, pane))
     return 0
 
 

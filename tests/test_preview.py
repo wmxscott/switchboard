@@ -6,6 +6,7 @@ import os
 import re
 import subprocess
 import sys
+from collections import Counter
 from pathlib import Path
 
 import pytest
@@ -14,7 +15,7 @@ from switchboard import preview
 
 DOT, FILL, HERE = "\ueabc", "\uf111", "\uf192"
 FORMAT = (
-    "#{session_path}\t#{window_index}\t#{window_active}\t#{pane_id}\t#{pane_active}"
+    "#{session_path}\t#{window_index}\t#{window_active}\t#{pane_index}\t#{pane_id}\t#{pane_active}"
     "\t#{pane_current_command}\t#{@switchboard-role}\t#{@switchboard-turn}"
     "\t#{@switchboard-pending}\t#{@switchboard-at}\t#{@switchboard-agent}\t#{window_name}"
 )
@@ -35,12 +36,17 @@ def plain(text: str) -> str:
 
 def listing(path: str | Path, *panes: tuple) -> str:
     """Each pane is a window index, window active, pane id, pane active, command, role, turn,
-    pending keys and window name, then maybe the agent's label."""
-    return "".join(
-        f"{path}\t{window}\t{window_on}\t{pane}\t{pane_on}\t{command}\t{role}\t{turn}\t{pending}"
-        f"\t0\t{''.join(agent)}\t{name}\n"
-        for window, window_on, pane, pane_on, command, role, turn, pending, name, *agent in panes
-    )
+    pending keys and window name, then maybe the agent's label. Its index is its place in its
+    window."""
+    placed: Counter[int] = Counter()
+    lines = []
+    for window, window_on, pane, pane_on, command, role, turn, pending, name, *agent in panes:
+        lines.append(
+            f"{path}\t{window}\t{window_on}\t{placed[window]}\t{pane}\t{pane_on}\t{command}"
+            f"\t{role}\t{turn}\t{pending}\t0\t{''.join(agent)}\t{name}\n"
+        )
+        placed[window] += 1
+    return "".join(lines)
 
 
 def test_a_session_with_agents_shows_the_most_urgent_ones_last_lines(stubs):
@@ -79,6 +85,38 @@ def test_a_session_with_agents_shows_the_most_urgent_ones_last_lines(stubs):
         ["list-panes", "-s", "-t", "=w/main", "-F", FORMAT],
         ["capture-pane", "-p", "-J", "-t", "%4", "-S", "-11"],
     ]
+
+
+TEAM = (
+    (0, 1, "%1", 1, "zsh", "", "", "", "shell"),
+    (1, 0, "%2", 1, "claude", "teammate", "working", "a1", "team"),
+    (1, 0, "%3", 0, "claude", "lead", "idle", "", "team"),
+    (2, 0, "%4", 1, "claude", "lead", "working", "lead", "lead"),
+)
+
+
+def test_the_preview_shows_the_pane_enter_lands_on(stubs):
+    stubs.tmux.answer("list-panes", stdout=listing("/srv", *TEAM))
+    stubs.tmux.answer("capture-pane", stdout="ok\n")
+    assert plain(preview.show("s", 20, "%3")).splitlines()[-2:] == ["claude · win 1 · idle", "ok"]
+    assert stubs.tmux.calls()[1][:5] == ["capture-pane", "-p", "-J", "-t", "%3"]
+
+
+@pytest.mark.parametrize("pane", ["", "%9"])
+def test_without_that_pane_the_most_urgent_agent_and_the_lead_first(stubs, pane):
+    stubs.tmux.answer("list-panes", stdout=listing("/srv", *TEAM))
+    stubs.tmux.answer("capture-pane", stdout="ok\n")
+    shown = plain(preview.show("s", 20, pane)).splitlines()[-2:]
+    assert shown == ["claude · win 2 · needs you", "ok"]
+    assert stubs.tmux.calls()[1][:5] == ["capture-pane", "-p", "-J", "-t", "%4"]
+
+
+def test_the_command_takes_the_pane(stubs):
+    stubs.tmux.answer("list-panes", stdout=listing("/srv", *TEAM))
+    command = [sys.executable, "-m", "switchboard", "__preview", "s", "%3"]
+    result = subprocess.run(command, capture_output=True, text=True, timeout=30)
+    assert (result.returncode, result.stderr) == (0, "")
+    assert stubs.tmux.calls()[1][:5] == ["capture-pane", "-p", "-J", "-t", "%3"]
 
 
 def test_an_agents_pane_is_named_by_its_label(stubs):

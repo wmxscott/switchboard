@@ -135,7 +135,7 @@ def fzf_args(folder: str, at: int | None) -> list[str]:
         "--bind",
         f"start:execute-silent:{listen}",
         "--bind",
-        f"enter,double-click:transform:{switch} {{1}}",
+        f"enter,double-click:transform:{switch} {{1}} {{2}}",
     ]
 
 
@@ -148,12 +148,12 @@ def listen() -> None:
         run.tmux(("set-option", "-p", "-t", pane, tmux.SIDEBAR, f"{port} {key}"))
 
 
-def switch(session: str) -> str:
+def switch(session: str, pane: str) -> str:
     """Switches the client viewing the sidebar, which tmux finds from `$TMUX_PANE`, and gives the
     actions that leave any search."""
     if not session:
         return ""
-    run.tmux(("switch-client", "-t", f"={session}"))
+    picker.switch(session, pane)
     return picker.back("")
 
 

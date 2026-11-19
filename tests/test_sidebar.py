@@ -29,7 +29,7 @@ SELF = [sys.executable, "-m", "switchboard"]
 DOT, FILL, OPEN, SHUT, HERE = "\ueabc", "\uf111", "\uf0d7", "\uf0da", "\uf192"
 TEXT, OVERLAY = "38;2;202;211;245", "38;2;128;135;162"
 RED, GREEN, PEACH = "38;2;237;135;150", "38;2;166;218;149", "38;2;245;169;127"
-BACK = "clear-query+search()+hide-input+rebind(j,k,/,q)"
+BACK = "search()+hide-input+rebind(j,k,/,q)"
 
 
 @pytest.fixture(autouse=True)
@@ -91,15 +91,15 @@ def fixture() -> Model:
 
 
 COMPACT = [
-    ("", "0", f"{OPEN} gadget"),
-    ("gadget", "0", f"│   main     {FILL}"),
-    ("", "1", f"{OPEN} W tools/widget"),
-    ("w/main", "1", f"│ {HERE} main     {FILL}"),
-    ("w/feat/x", "1", f"│   feat/x   {FILL}"),
-    ("w/zed", "1", "│   zed"),
-    ("", "2", f"{OPEN} other"),
-    ("scratch", "2", f"│   scratch  {DOT}"),
-    ("home", "2", "│   home"),
+    ("", "", "0", f"{OPEN} gadget"),
+    ("gadget", "%3", "0", f"│   main     {FILL}"),
+    ("", "", "1", f"{OPEN} W tools/widget"),
+    ("w/main", "%1", "1", f"│ {HERE} main     {FILL}"),
+    ("w/feat/x", "%1", "1", f"│   feat/x   {FILL}"),
+    ("w/zed", "", "1", "│   zed"),
+    ("", "", "2", f"{OPEN} other"),
+    ("scratch", "%9", "2", f"│   scratch  {DOT}"),
+    ("home", "", "2", "│   home"),
 ]
 
 
@@ -128,7 +128,7 @@ def test_the_compact_list_has_worktrees_and_their_dots_only():
     groups = picker.render(fixture(), "w/main", compact=True)
     assert fields(picker.lines(groups)) == COMPACT
     assert [group["title"] for group in groups] == ["gadget", "W tools/widget", "other"]
-    lines = [line.split("\t")[2] for line in picker.lines(groups)]
+    lines = [line.split("\t")[3] for line in picker.lines(groups)]
     assert lines[0] == f"{esc(TEXT, OPEN)} {esc(f'1;{TEXT}', 'gadget')}"
     assert lines[3].startswith(f"{esc(OVERLAY, '│')} {esc(f'1;{GREEN}', HERE)} {esc(TEXT, 'main')}")
     assert lines[3].endswith(esc(RED, FILL))
@@ -141,9 +141,9 @@ def test_the_compact_list_cuts_long_names_short_to_keep_the_dots():
     found = Model(
         (Repo("/w", "w", "main", (worktree("w/long", long, "/w", (1, "lead", "done")),)),)
     )
-    shown = fields(picker.lines(picker.render(found, "", compact=True)))[1][2]
+    shown = fields(picker.lines(picker.render(found, "", compact=True)))[1][3]
     assert shown == f"│   {long[: picker.NARROW - 1]}…  {FILL}"
-    assert fields(picker.lines(picker.render(found, "")))[1][2].startswith(f"│   {long}  ")
+    assert fields(picker.lines(picker.render(found, "")))[1][3].startswith(f"│   {long}  ")
 
 
 def test_the_picker_keeps_its_full_list():
@@ -156,7 +156,7 @@ def test_a_folded_repo_shows_its_most_urgent_dot():
     plainer = Repo("/p", "plain", "main", (worktree("p", "main", "/p"),))
     found = Model((gadget(), widget(), plainer), fixture().other)
     groups = picker.render(found, "w/main", compact=True)
-    shut = [line.split("\t")[2] for line in picker.lines(groups, folded=range(4))]
+    shut = [line.split("\t")[3] for line in picker.lines(groups, folded=range(4))]
     assert [plain(line) for line in shut] == [
         f"{SHUT} gadget {FILL}",
         f"{SHUT} W tools/widget {FILL}",
@@ -174,12 +174,12 @@ def test_a_long_title_is_cut_short_to_keep_a_folded_repo_s_dot():
         (Repo("/w", long, "main", (worktree("w/a", "main", "/w", (1, "lead", "done")),)),)
     )
     groups = picker.render(found, "", compact=True)
-    shut = fields(picker.lines(groups, folded=[0]))[0][2]
+    shut = fields(picker.lines(groups, folded=[0]))[0][3]
     assert shut == f"{SHUT} {long[:22]}… {FILL}"
     assert len(shut) == 27
-    assert fields(picker.lines(groups))[0][2] == f"{OPEN} {long[:22]}…"
+    assert fields(picker.lines(groups))[0][3] == f"{OPEN} {long[:22]}…"
     assert groups[0]["title"] == long
-    assert fields(picker.lines(picker.render(found, "")))[0][2].startswith(f"{OPEN} {long}  ")
+    assert fields(picker.lines(picker.render(found, "")))[0][3].startswith(f"{OPEN} {long}  ")
 
 
 @pytest.fixture
@@ -206,20 +206,20 @@ def test_keys_and_look(inside):
     assert cli.main(["sidebar"]) == 130
     call = opened(stubs)
     args = call["args"]
-    for arg in ("--no-input", "--no-sort", "--delimiter=\t", "--with-nth=3", "--no-info"):
+    for arg in ("--no-input", "--no-sort", "--delimiter=\t", "--with-nth=4", "--no-info"):
         assert arg in args
     assert "--listen=127.0.0.1:0" in args
     assert not [arg for arg in args if arg.startswith(("--preview", "--color"))]
     keys = bindings(args)
     assert args[args.index("j:down,k:up,q:ignore") - 1] == "--bind"
-    assert keys["/"] == "show-input+unbind(j,k,/,q)"
+    assert keys["/"] == "show-input+clear-query+unbind(j,k,/,q)"
     assert keys["load"] == "pos(4)+unbind(load)"
     assert shlex.split(keys["start"].removeprefix("execute-silent:")) == [*SELF, "__listen"]
     enter = shlex.split(keys["enter,double-click"].removeprefix("transform:"))
-    assert enter == [*SELF, "__switch", "{1}"]
+    assert enter == [*SELF, "__switch", "{1}", "{2}"]
     tab = shlex.split(keys["tab"].removeprefix("transform:"))
     assert tab[:4] == [*SELF, "__fold"]
-    assert tab[5] == "{2}"
+    assert tab[5] == "{3}"
     assert fields(call["stdin"].splitlines()) == COMPACT
 
 
@@ -248,16 +248,34 @@ def test_esc_leaves_a_search_else_does_nothing(state, out):
     assert sh(key, FZF_INPUT_STATE=state) == out
 
 
-def test_enter_switches_the_client_and_leaves_any_search(stubs):
-    enter = bindings(sidebar.fzf_args("/f", None))["enter,double-click"]
-    out = sh(enter.removeprefix("transform:").replace("{1}", "'w/feat/x'"), TMUX_PANE=PANE)
-    assert out == BACK
-    assert stubs.tmux.calls() == [["switch-client", "-t", "=w/feat/x"]]
+def enter(session: str, pane: str) -> str:
+    """Enter's binding, as fzf runs it on a line with `session` and `pane`."""
+    binding = bindings(sidebar.fzf_args("/f", None))["enter,double-click"]
+    command = binding.removeprefix("transform:").replace("{1}", shlex.quote(session))
+    return sh(command.replace("{2}", shlex.quote(pane)), TMUX_PANE=PANE)
+
+
+def test_enter_lands_the_client_on_the_agents_pane_and_leaves_any_search(stubs):
+    assert enter("w/feat/x", "%1") == BACK
+    assert stubs.tmux.calls() == [["switch-client", "-t", "%1"]]
+
+
+def test_enter_on_a_session_without_agents_switches_to_it(stubs):
+    assert enter("w/zed", "") == BACK
+    assert stubs.tmux.calls() == [["switch-client", "-t", "=w/zed"]]
+
+
+def test_enter_on_a_pane_gone_since_falls_back_to_its_session(stubs):
+    stubs.tmux.answer("switch-client -t %1", code=1, stderr="can't find pane: %1\n")
+    assert enter("w/feat/x", "%1") == BACK
+    assert stubs.tmux.calls() == [
+        ["switch-client", "-t", "%1"],
+        ["switch-client", "-t", "=w/feat/x"],
+    ]
 
 
 def test_enter_on_a_header_does_nothing(stubs):
-    enter = bindings(sidebar.fzf_args("/f", None))["enter,double-click"]
-    assert sh(enter.removeprefix("transform:").replace("{1}", "''")) == ""
+    assert enter("", "") == ""
     assert stubs.tmux.calls() == []
 
 
@@ -360,11 +378,11 @@ def test_redraw_rebuilds_the_list_and_keeps_folded_repos_folded(stubs, monkeypat
     stubs.tmux.answer("display-message", stdout="alpha\n")
     out = sidebar.redraw(str(folder))
     assert fields(out.splitlines()) == [
-        ("", "0", f"{OPEN} alpha"),
-        ("alpha", "0", f"│ {HERE} main    {FILL}"),
-        ("", "1", f"{OPEN} gadget"),
-        ("gadget", "1", f"│   main    {FILL}"),
-        ("", "2", f"{SHUT} W tools/widget {FILL}"),
+        ("", "", "0", f"{OPEN} alpha"),
+        ("alpha", "%1", "0", f"│ {HERE} main    {FILL}"),
+        ("", "", "1", f"{OPEN} gadget"),
+        ("gadget", "%3", "1", f"│   main    {FILL}"),
+        ("", "", "2", f"{SHUT} W tools/widget {FILL}"),
     ]
     assert json.loads((folder / picker.FOLDED).read_text()) == [2]
     assert stubs.tmux.calls() == [["display-message", "-p", "-t", PANE, "#{session_name}"]]
@@ -451,8 +469,8 @@ def test_poke_skips_dead_and_broken_endpoints_without_waiting(listener):
 
 
 def panes(stubs, *sidebars: str) -> None:
-    rows = [f"w/main\t0\t%{n}\tfzf\t\t\t\t\t\t{s}\n" for n, s in enumerate(sidebars)]
-    agent = "w/main\t0\t%9\tclaude\tlead\tdone\t\t0\tclaude\t\n"
+    rows = [f"w/main\t0\t{n}\t%{n}\tfzf\t\t\t\t\t\t{s}\n" for n, s in enumerate(sidebars)]
+    agent = "w/main\t0\t0\t%9\tclaude\tlead\tdone\t\t0\tclaude\t\n"
     stubs.tmux.answer("list-sessions", stdout="w/main\t\t/w\t0\t\nother\t\t/o\t0\t\n")
     stubs.tmux.answer("list-panes", stdout=agent + "".join(rows))
 

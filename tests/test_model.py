@@ -20,7 +20,7 @@ def sessions_text(*rows: tuple[str, str, str | Path]) -> str:
 def panes_text(*rows: tuple[str, str, str, str]) -> str:
     """Each row is a session, a role, a turn and the pending keys."""
     return "".join(
-        f"{session}\t0\t%{n}\tclaude\t{role}\t{turn}\t{pending}\t0\t\t\n"
+        f"{session}\t0\t0\t%{n}\tclaude\t{role}\t{turn}\t{pending}\t0\t\t\n"
         for n, (session, role, turn, pending) in enumerate(rows)
     )
 
@@ -203,3 +203,11 @@ def test_build_without_git():
     agent = Pane("s", 1, "%4", "claude", "lead", "done")
     found = model.build([session], [agent])
     assert found == model.Model((), (model.Row(session, None, (agent,)),))
+
+
+def test_a_row_lands_on_its_most_urgent_agent():
+    session = Session("s", "", "/s")
+    teammate = Pane("s", 0, "%1", "claude", "teammate", "done")
+    lead = Pane("s", 2, "%2", "claude", "lead", "done")
+    assert model.Row(session, None, (teammate, lead)).target == lead
+    assert model.Row(session, None).target is None

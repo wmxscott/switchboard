@@ -24,6 +24,10 @@ class Row:
     def state(self) -> str | None:
         return panestate.most_urgent(agent.state for agent in self.agents)
 
+    @property
+    def target(self) -> Pane | None:
+        return tmux.most_urgent(self.agents)
+
 
 @dataclass(frozen=True)
 class Repo:
