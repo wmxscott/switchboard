@@ -29,7 +29,7 @@ SELF = [sys.executable, "-m", "switchboard"]
 DOT, FILL, OPEN, SHUT, HERE = "\ueabc", "\uf111", "\uf0d7", "\uf0da", "\uf192"
 TEXT, OVERLAY = "38;2;202;211;245", "38;2;128;135;162"
 RED, GREEN, PEACH = "38;2;237;135;150", "38;2;166;218;149", "38;2;245;169;127"
-BACK = "search()+hide-input+rebind(j,k,/,q)"
+BACK = "search()+hide-input+rebind(j,k,g,G,/,q)"
 
 
 @pytest.fixture(autouse=True)
@@ -236,8 +236,7 @@ def test_keys_and_look(inside):
     assert not [arg for arg in args if arg.startswith(("--preview", "--color"))]
     keys = bindings(args)
     assert args[args.index(sidebar.KEYS) - 1] == "--bind"
-    assert keys["/"] == "show-input+clear-query+unbind(j,k,/,q)"
-    assert keys["load"] == "pos(4)+unbind(load)"
+    assert keys["/"] == "show-input+clear-query+unbind(j,k,g,G,/,q)"
     assert shlex.split(keys["start"].removeprefix("execute-silent:")) == [*SELF, "__listen"]
     enter = shlex.split(keys["enter,double-click"].removeprefix("transform:"))
     assert enter == [*SELF, "__switch", "{1}", "{2}"]
@@ -261,6 +260,21 @@ def test_j_and_k_step_over_the_gap(keys, move):
 
 
 STEPS = re.compile(r"(?:^|,)([a-z][a-z,]*):([a-z]+)\+transform\(([^)]*)\)")
+
+
+def test_g_and_shift_g_jump_to_either_end_and_a_search_types_them():
+    """fzf's `first` is the list's first row; `last` is the newest card, or the list's last row
+    when there are no cards."""
+    assert {"g:first", "G:last"} <= set(sidebar.KEYS.split(","))
+    keys = bindings(sidebar.fzf_args("/f"))
+    assert keys["/"] == "show-input+clear-query+unbind(j,k,g,G,/,q)"
+    assert sh(keys["esc"].removeprefix("transform:"), FZF_INPUT_STATE="enabled") == BACK
+
+
+def test_the_pickers_search_still_holds_only_its_own_keys():
+    keys = bindings(picker.fzf_args("/f", None))
+    assert keys["/"].startswith("show-input+clear-query+unbind(j,k,/,q)+")
+    assert picker.back("") == "search()+hide-input+rebind(j,k,/,q)"
 
 
 def test_with_no_cards_the_sidebar_is_the_list_alone(inside, monkeypatch):
@@ -287,7 +301,7 @@ def test_enter_on_a_card_lands_on_its_agents_pane(stubs, monkeypatch, sized, tmp
 @pytest.mark.parametrize("group", ["", cards.GAP])
 def test_tab_on_a_card_or_the_gap_folds_nothing(tmp_path, group):
     (tmp_path / picker.MODEL).write_text(json.dumps(picker.render(fixture(), "", compact=True)))
-    tab = bindings(sidebar.fzf_args(str(tmp_path), None))["tab"].removeprefix("transform:")
+    tab = bindings(sidebar.fzf_args(str(tmp_path)))["tab"].removeprefix("transform:")
     assert sh(tab.replace("{3}", shlex.quote(group))).strip() == ""
     assert not (tmp_path / picker.FOLDED).exists()
 
@@ -298,7 +312,7 @@ def test_a_fold_or_a_resize_fits_the_stack_again(stubs, monkeypatch, sized, tmp_
     monkeypatch.setenv("TMUX_PANE", PANE)
     stubs.tmux.answer("display-message", stdout="w/main\n")
     sidebar.redraw(str(tmp_path))
-    keys = bindings(sidebar.fzf_args(str(tmp_path), None))
+    keys = bindings(sidebar.fzf_args(str(tmp_path)))
     resize = keys["resize"].removeprefix("reload:")
     assert fields(items(sh(resize))) == [*COMPACT, gap(20 - 9 - 3), GADGET]
     tab = keys["tab"].removeprefix("transform:")
@@ -315,7 +329,7 @@ def test_a_fold_or_a_resize_fits_the_stack_again(stubs, monkeypatch, sized, tmp_
 def test_tab_folds_through_the_hidden_commands_and_reloads_nul_separated_items(tmp_path):
     """fzf's side, done by hand: run the Tab binding, then the reload it asks for."""
     (tmp_path / picker.MODEL).write_text(json.dumps(picker.render(fixture(), "", compact=True)))
-    tab = bindings(sidebar.fzf_args(str(tmp_path), None))["tab"].removeprefix("transform:")
+    tab = bindings(sidebar.fzf_args(str(tmp_path)))["tab"].removeprefix("transform:")
     actions = sh(tab.replace("{3}", "'1'"), FZF_INPUT_STATE="hidden")
     position, _, reload = actions.strip().partition("+reload:")
     assert position == "pos(3)"
@@ -348,13 +362,13 @@ def test_no_hints_show_in_or_out_of_a_search(inside):
     [("enabled", BACK), ("hidden", "ignore\n")],
 )
 def test_esc_leaves_a_search_else_does_nothing(state, out):
-    key = bindings(sidebar.fzf_args("/f", None))["esc"].removeprefix("transform:")
+    key = bindings(sidebar.fzf_args("/f"))["esc"].removeprefix("transform:")
     assert sh(key, FZF_INPUT_STATE=state) == out
 
 
 def enter(session: str, pane: str) -> str:
     """Enter's binding, as fzf runs it on a line with `session` and `pane`."""
-    binding = bindings(sidebar.fzf_args("/f", None))["enter,double-click"]
+    binding = bindings(sidebar.fzf_args("/f"))["enter,double-click"]
     command = binding.removeprefix("transform:").replace("{1}", shlex.quote(session))
     return sh(command.replace("{2}", shlex.quote(pane)), TMUX_PANE=PANE)
 
@@ -384,7 +398,7 @@ def test_enter_on_a_header_does_nothing(stubs):
 
 
 def test_start_records_the_port_and_key_on_its_pane(stubs):
-    start = bindings(sidebar.fzf_args("/f", None))["start"].removeprefix("execute-silent:")
+    start = bindings(sidebar.fzf_args("/f"))["start"].removeprefix("execute-silent:")
     assert sh(start, TMUX_PANE=PANE, FZF_PORT="53122", FZF_API_KEY="k3y") == ""
     assert stubs.tmux.calls() == [
         ["set-option", "-p", "-t", PANE, "@switchboard-sidebar", "53122 k3y"]
@@ -424,7 +438,9 @@ def test_fzf_gets_an_api_key_and_the_folder_but_not_the_theme(inside, monkeypatc
     found = json.loads(seen.read_text())
     assert set(found["env"]) == {"FZF_API_KEY", "SWITCHBOARD_SIDEBAR"}
     assert re.fullmatch("[0-9a-f]{32}", found["env"]["FZF_API_KEY"])
-    assert found["cache"] == [sidebar.CARDS, picker.FOLDED, picker.MODEL]
+    assert found["cache"] == sorted(
+        [sidebar.CARDS, picker.FOLDED, picker.MODEL, sidebar.SHOWN, sidebar.NEXT, sidebar.MOVES]
+    )
     assert esc("38;2;210;15;57", FILL) in found["stdin"]
 
 
@@ -512,6 +528,174 @@ def test_redraw_from_a_fresh_folder_or_none(stubs, monkeypatch, sized, tmp_path)
     stubs.tmux.answer("display-message", stdout="w/main\n")
     assert fields(items(sidebar.redraw(str(tmp_path)))) == [*COMPACT, gap(20 - 9 - 3), GADGET]
     assert sidebar.redraw("") == ""
+
+
+def land(folder: str, at: int, **env: str) -> str:
+    """fzf's load binding, run as fzf runs it once a list lands, with the cursor on row `at`."""
+    load = bindings(sidebar.fzf_args(folder))["load"].removeprefix("transform:")
+    return sh(load, SWITCHBOARD_SIDEBAR=folder, FZF_POS=str(at), **env)
+
+
+def moved(folder: str, at: int, count: int) -> int:
+    """The cursor's row once a list of `count` items lands with it on row `at`, which fzf first
+    cuts to the list's last."""
+    at = min(at, count)
+    actions = land(folder, at)
+    return int(actions.removeprefix("pos(").removesuffix(")\n")) if actions else at
+
+
+def poked(monkeypatch, folder: str, found: Model, at: int) -> tuple[list[tuple[str, ...]], int]:
+    """fzf's side of a poke, with the cursor on row `at`: the items it reloads, and the cursor's
+    row once they land."""
+    monkeypatch.setattr(model, "load", lambda: found)
+    monkeypatch.setenv("FZF_POS", str(at))
+    shown = fields(items(sidebar.redraw(folder)))
+    return shown, moved(folder, at, len(shown))
+
+
+def sessions(*named: tuple[str, int, str]) -> Model:
+    """One repo with a session for each `(name, window, state)`, its lead agent in that window
+    `done`, needing you, or `idle`."""
+    turn = {"done": ("done",), "needs": ("working", ("lead",)), "idle": ("idle",)}
+    found = (worktree(name, name, "/r", (n, "lead", *turn[state])) for name, n, state in named)
+    return Model((Repo("/r", "r", "main", tuple(found)),))
+
+
+@pytest.fixture
+def folder(stubs, monkeypatch, sized, tmp_path) -> str:
+    """The folder of session `a`'s sidebar."""
+    monkeypatch.setenv("TMUX_PANE", PANE)
+    stubs.tmux.answer("display-message", stdout="a\n")
+    return str(tmp_path)
+
+
+TWO = (("a", 1, "idle"), ("b", 2, "done"))
+GROWN = (("a", 1, "idle"), ("a2", 5, "idle"), ("b", 2, "done"), ("c", 3, "needs"))
+
+
+def test_the_cursor_keeps_its_card_or_row_when_a_card_and_a_row_arrive(folder, monkeypatch):
+    shown, _ = poked(monkeypatch, folder, sessions(*TWO), 1)
+    assert [item[:3] for item in shown[3:]] == [("", "", cards.GAP), ("b", "%2", "")]
+    shown, at = poked(monkeypatch, folder, sessions(*GROWN), 5)
+    assert (at, shown[at - 1][:3]) == (7, ("b", "%2", ""))
+    shown, at = poked(monkeypatch, folder, sessions(("a0", 6, "idle"), *GROWN), 4)
+    assert (at, shown[at - 1][:3]) == (5, ("b", "%2", "0"))
+
+
+FOUR = (("a", 1, "idle"), ("b", 2, "done"), ("c", 3, "needs"), ("d", 4, "needs"))
+
+
+@pytest.mark.parametrize(
+    ("on", "resolved", "lands"),
+    [
+        (9, "b", ("d", "%4", "")),  # an older card goes: the cursor keeps its own
+        (8, "c", ("d", "%4", "")),  # its card goes: the newer one that takes its place
+        (9, "d", ("c", "%3", "")),  # the newest goes: the one before it
+        (8, "bcd", ("d", "%4", "0")),  # no cards left: the list's last row
+    ],
+)
+def test_a_card_resolving_leaves_the_cursor_on_the_nearest_card(
+    folder, monkeypatch, on, resolved, lands
+):
+    shown, _ = poked(monkeypatch, folder, sessions(*FOUR), 1)
+    assert [item[1] for item in shown[6:]] == ["%2", "%3", "%4"]
+    left = [(name, n, "idle" if name in resolved else state) for name, n, state in FOUR]
+    shown, at = poked(monkeypatch, folder, sessions(*left), on)
+    assert shown[at - 1][:3] == lands
+
+
+def test_a_header_keeps_the_cursor_by_its_title_when_a_repo_arrives_above(folder, monkeypatch):
+    poked(monkeypatch, folder, fixture(), 1)
+    alpha = Repo("/a", "alpha", "main", (worktree("alpha", "main", "/a"),))
+    shown, at = poked(monkeypatch, folder, Model((alpha, gadget(), widget()), fixture().other), 3)
+    assert (at, shown[at - 1][2:]) == (5, ("2", f"{OPEN} W tools/widget"))
+
+
+def test_a_resize_keeps_the_cursor_on_its_card_or_the_nearest_shown(folder, monkeypatch):
+    poked(monkeypatch, folder, sessions(*FOUR), 1)
+    resize = bindings(sidebar.fzf_args(folder))["resize"].removeprefix("reload:")
+    for on in (9, 7):
+        short = fields(items(sh(resize, FZF_LINES="9", FZF_POS=str(on))))
+        assert short[5:7] == [gap(0), ("", "", "", "+2 more")]
+        at = moved(folder, on, len(short))
+        assert short[at - 1][1] == "%4"
+        sh(resize, FZF_POS=str(at))
+        assert moved(folder, at, 9) == 9
+    short = fields(items(sh(resize, FZF_LINES="9", FZF_POS="1")))
+    moved(folder, 1, len(short))
+    tall = fields(items(sh(resize, FZF_POS="7")))
+    assert tall[moved(folder, 7, len(tall)) - 1][1] == "%2"
+
+
+# An `fzf` that runs its load binding as fzf does once its input has landed, with the cursor on
+# the first row, and keeps what it prints.
+LANDS = """#!{python}
+import os, subprocess, sys
+
+if sys.argv[1:] == ["--version"]:
+    print("0.59.0")
+    sys.exit(0)
+sys.stdin.read()
+args = sys.argv[1:]
+load = next(b for f, b in zip(args, args[1:]) if f == "--bind" and b.startswith("load:"))
+env = {{**os.environ, "FZF_POS": "1"}}
+out = subprocess.run(
+    ["sh", "-c", load.removeprefix("load:transform:")], env=env, capture_output=True, text=True
+)
+with open({seen!r}, "w") as f:
+    f.write(out.stdout + out.stderr)
+sys.exit(130)
+"""
+
+
+def test_the_first_draw_puts_the_cursor_on_the_current_session(inside, tmp_path):
+    seen = tmp_path / "seen.txt"
+    (tmp_path / "bin" / "fzf").write_text(LANDS.format(python=sys.executable, seen=str(seen)))
+    assert cli.main(["sidebar"]) == 130
+    assert seen.read_text() == "pos(4)\n"
+
+
+def test_tab_keeps_the_cursor_on_the_folded_header_once_the_list_lands(folder, monkeypatch):
+    poked(monkeypatch, folder, fixture(), 1)
+    tab = bindings(sidebar.fzf_args(folder))["tab"].removeprefix("transform:")
+    actions = sh(tab.replace("{3}", "'1'"), FZF_INPUT_STATE="hidden", FZF_POS="5")
+    position, _, reload = actions.strip().partition("+reload:")
+    assert position == "pos(3)"
+    shown = fields(items(sh(reload, FZF_POS="3")))
+    assert shown[moved(folder, 3, len(shown)) - 1][2:] == ("1", f"{SHUT} W tools/widget {FILL}")
+
+
+def test_a_list_moves_the_cursor_once_and_never_while_a_search_filters_it(folder, monkeypatch):
+    poked(monkeypatch, folder, sessions(*TWO), 1)
+    monkeypatch.setattr(model, "load", lambda: sessions(("a0", 6, "idle"), ("a", 1, "idle")))
+    monkeypatch.setenv("FZF_POS", "2")
+    sidebar.redraw(folder)
+    assert land(folder, 2, FZF_INPUT_STATE="enabled", FZF_QUERY="a") == ""
+    assert land(folder, 2) == ""
+    sidebar.redraw(folder)
+    assert land(folder, 2, FZF_INPUT_STATE="hidden", FZF_QUERY="a") == "pos(2)\n"
+
+
+X, Y, MORE, GAP = ("row", "x"), ("row", "y"), ("more",), (cards.GAP,)
+C1, C3, C4 = ("card", "%1"), ("card", "%3"), ("card", "%4")
+
+
+@pytest.mark.parametrize(
+    ("new", "lands"),
+    [
+        ([X, GAP, C4], [C4, C4]),  # `+N more` and its card gone: the first card, the newest
+        ([X, Y, GAP, C1, C3], [C1, C3]),  # `+N more` unfolds: the first card
+        ([X, Y], [Y, Y]),  # no cards: the list's last row
+    ],
+)
+def test_more_or_a_card_gone_moves_the_cursor_to_a_card_never_the_gap(new, lands):
+    assert [new[n] for n in sidebar.steady([X, GAP, MORE, C3], new)[2:]] == lands
+
+
+def test_a_row_gone_gives_the_cursor_the_next_row_else_the_one_before():
+    old = [("head", "r"), X, Y, ("head", "s"), ("row", "z")]
+    assert sidebar.steady(old, [("head", "r"), X, ("head", "s"), ("row", "z")])[2] == 2
+    assert sidebar.steady(old, [("head", "r"), X])[2:] == [1, 1, 1]
 
 
 class Listener:

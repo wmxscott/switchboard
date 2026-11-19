@@ -30,10 +30,11 @@ if TYPE_CHECKING:
 
 MIN_FZF = (0, 59)
 KEYS = "j:down,k:up,q:abort"
+HELD = "j,k,/,q"
 # fzf drops any change to the query made while its input is hidden, which Esc's transform ends with,
 # so `/` clears the query once the input shows, and Esc only searches for nothing.
-SEARCH_KEYS = "show-input+clear-query+unbind(j,k,/,q)"
-BACK_KEYS = "search()+hide-input+rebind(j,k,/,q)"
+SEARCH_KEYS = "show-input+clear-query+unbind({})"
+BACK_KEYS = "search()+hide-input+rebind({})"
 HINT = "j/k move · / search · tab fold · ↵ switch · q/esc close"
 SEARCH_HINT = "↑/↓ move · tab fold · ↵ switch · esc back"
 LOOK = ("--layout=reverse", "--height=100%", "--border=none", "--margin=0", "--padding=0")
@@ -140,12 +141,14 @@ def list_args(
     hints: tuple[str, str],
     leave: str,
     read0: bool = False,
+    held: str = HELD,
 ) -> list[str]:
     """Search starts off: `/` shows an empty input line, and Esc then hides it and shows every line
-    again. Out of a search, Esc does `leave`."""
+    again. Out of a search, Esc does `leave`. A search types the `held` keys rather than doing
+    theirs."""
     hint, search_hint = hints
     fold = shlex.join([*command(), "__fold0" if read0 else "__fold", folder])
-    out = shlex.quote(back(hint))
+    out = shlex.quote(back(hint, held))
     args = [
         "--ansi",
         *(["--read0"] if read0 else []),
@@ -157,7 +160,7 @@ def list_args(
         "--bind",
         keys,
         "--bind",
-        f"/:{SEARCH_KEYS}{_change_header(search_hint)}",
+        f"/:{SEARCH_KEYS.format(held)}{_change_header(search_hint)}",
         "--bind",
         f'esc:transform:[ "$FZF_INPUT_STATE" = enabled ] && printf %s {out} || echo {leave}',
         "--delimiter=\t",
@@ -172,9 +175,9 @@ def list_args(
     return args
 
 
-def back(hint: str) -> str:
+def back(hint: str, held: str = HELD) -> str:
     """The actions that leave a search."""
-    return f"{BACK_KEYS}{_change_header(hint)}"
+    return f"{BACK_KEYS.format(held)}{_change_header(hint)}"
 
 
 def render(found: Model, current: str, compact: bool = False) -> list[Group]:
