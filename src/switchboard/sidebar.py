@@ -4,7 +4,8 @@ client viewing it, and the sidebar stays.
 Its fzf listens on a local port, which it records with its API key in its pane's
 `@switchboard-sidebar`. `refresh` finds them there, in the pane read it already makes, and asks
 each sidebar to reload. `--toggle` finds a window's sidebar by the same option, which it sets to
-`starting` on a pane it opens until fzf records its port.
+`starting` on a pane it opens until fzf records its port. It keeps the window's layout from before
+in `@switchboard-layout`, to put back when it closes the sidebar.
 """
 
 from __future__ import annotations
@@ -30,6 +31,7 @@ HOST = "127.0.0.1"
 TIMEOUT = 0.2
 COLUMNS = 32
 STARTING = "starting"
+LAYOUT = "@switchboard-layout"
 
 
 def show() -> int:
@@ -65,28 +67,63 @@ def show() -> int:
 
 
 def toggle(pane: str) -> None:
-    """Closes the sidebar in `pane`'s window, or opens one on its left without moving the focus."""
+    """Closes the sidebar in `pane`'s window, or opens one down the window's left edge, without
+    moving the focus."""
     pane = pane or os.environ.get("TMUX_PANE", "")
     if not pane or not os.environ.get("TMUX"):
         raise picker.PickerError("the sidebar only runs inside tmux")
-    found = run.output("tmux", "list-panes", "-F", f"#{{pane_id}}\t#{{{tmux.SIDEBAR}}}", "-t", pane)
+    fields = f"#{{pane_id}}\t#{{{tmux.SIDEBAR}}}\t#{{{LAYOUT}}}\t#{{window_layout}}"
+    found = run.output("tmux", "list-panes", "-F", fields, "-t", pane)
     if found is None:
         raise picker.PickerError(f"can't find pane {pane}")
-    shown = [line.partition("\t") for line in found.splitlines()]
-    sidebars = [pane_id for pane_id, _, value in shown if value]
+    panes = [(line.split("\t", 3) + [""] * 3)[:4] for line in found.splitlines()]
+    sidebars = [(pane_id, saved) for pane_id, tag, saved, _ in panes if tag]
     if sidebars:
-        if run.tmux(*(("kill-pane", "-t", pane_id) for pane_id in sidebars)) is None:
+        others = [pane_id for pane_id, tag, _, _ in panes if not tag]
+        kill = [("kill-pane", "-t", pane_id) for pane_id, _ in sidebars]
+        after = [("display-message", "-p", "-t", others[0], "#{window_layout}")] if others else []
+        now = run.tmux(*kill, *after)
+        if now is None:
             raise picker.PickerError("can't close the sidebar")
+        layout = _restored(sidebars[0][1], now)
+        if layout:
+            run.tmux(("select-layout", "-t", others[0], layout))
         return
     # tmux-resurrect saves the command a pane's shell runs, so the sidebar runs under one. `; exit`
     # keeps `sh` from exec'ing it.
     launch = ("sh", "-c", f"{shlex.join([*picker.command(), 'sidebar'])}; exit")
-    split = ("split-window", "-hbd", "-l", str(COLUMNS), "-P", "-F", "#{pane_id}", "-t", pane)
+    split = ("split-window", "-hbdf", "-l", str(COLUMNS), "-P", "-F", "#{pane_id}", "-t", pane)
     opened = (run.output("tmux", *split, *launch) or "").strip()
     if not opened:
         raise picker.PickerError("can't open the sidebar")
     # `-o`: fzf may already have recorded its port.
-    run.tmux(("set-option", "-p", "-o", "-q", "-t", opened, tmux.SIDEBAR, STARTING))
+    run.tmux(
+        ("set-option", "-p", "-t", opened, LAYOUT, panes[0][3]),
+        ("set-option", "-p", "-o", "-q", "-t", opened, tmux.SIDEBAR, STARTING),
+    )
+
+
+def _restored(saved: str, now: str) -> str | None:
+    """The window's layout from before the sidebar opened, which gives back the widths it took,
+    with the focus and last-pane history tmux left `now` it has closed. tmux refuses it if the panes
+    have changed."""
+    try:
+        layout, marks = json.loads(saved), {p["I"]: p for p in _panes(json.loads(now)["L"])}
+        for cell in _panes(layout["L"]):
+            for key in ("a", "l"):
+                cell.pop(key, None)
+                if key in marks.get(cell["I"], {}):
+                    cell[key] = marks[cell["I"]][key]
+    except (ValueError, KeyError, TypeError, AttributeError):
+        return None
+    return json.dumps(layout, separators=(",", ":"))
+
+
+def _panes(cell: dict) -> Iterable[dict]:
+    if cell.get("t") == "p":
+        yield cell
+    for child in cell.get("c", ()):
+        yield from _panes(child)
 
 
 def fzf_args(folder: str, at: int | None) -> list[str]:

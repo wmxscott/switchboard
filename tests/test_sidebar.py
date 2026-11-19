@@ -507,10 +507,29 @@ def test_a_dead_sidebar_leaves_refresh_and_the_hook_silent(stubs):
     assert [call[0] for call in stubs.tmux.calls()].count("list-panes") == 2
 
 
-LIST = ["list-panes", "-F", "#{pane_id}\t#{@switchboard-sidebar}", "-t"]
+LIST = [
+    "list-panes",
+    "-F",
+    "#{pane_id}\t#{@switchboard-sidebar}\t#{@switchboard-layout}\t#{window_layout}",
+    "-t",
+]
 LAUNCH = ["sh", "-c", f"{shlex.join([*SELF, 'sidebar'])}; exit"]
-SPLIT = ["split-window", "-hbd", "-l", "32", "-P", "-F", "#{pane_id}", "-t"]
-TAG = ["set-option", "-p", "-o", "-q", "-t", "%8", "@switchboard-sidebar", "starting"]
+SPLIT = ["split-window", "-hbdf", "-l", "32", "-P", "-F", "#{pane_id}", "-t"]
+
+
+def layout(*panes: dict, w: int = 40) -> str:
+    """A tmux 3.8 layout of `panes` side by side, each `w` wide."""
+    cells = [
+        {"t": "p", "w": w, "h": 40, "x": (w + 1) * n, "y": 0, **p} for n, p in enumerate(panes)
+    ]
+    return json.dumps({"V": 2, "L": {"t": "h", "w": 120, "h": 40, "x": 0, "y": 0, "c": cells}})
+
+
+BEFORE = layout({"I": PANE, "a": True}, {"I": "%6", "l": 0})
+TAG = [
+    *("set-option", "-p", "-t", "%8", "@switchboard-layout", BEFORE, ";"),
+    *("set-option", "-p", "-o", "-q", "-t", "%8", "@switchboard-sidebar", "starting"),
+]
 
 
 @pytest.fixture
@@ -518,23 +537,79 @@ def window(stubs, monkeypatch):
     """Inside tmux in pane %5, in a window with another pane and no sidebar."""
     monkeypatch.setenv("TMUX", "/tmp/stub,1,0")
     monkeypatch.setenv("TMUX_PANE", PANE)
-    stubs.tmux.answer("list-panes", stdout=f"{PANE}\t\n%6\t\n")
+    stubs.tmux.answer("list-panes", stdout=f"{PANE}\t\t\t{BEFORE}\n%6\t\t\t{BEFORE}\n")
     stubs.tmux.answer("split-window", stdout="%8\n")
     return stubs
 
 
-def test_toggle_opens_a_sidebar_on_the_left_and_tags_it_quietly(window, capsys):
+def test_toggle_opens_a_sidebar_down_the_left_and_tags_it_quietly(window, capsys):
+    """Its tag, and the window's layout before it, for closing it to put back."""
     assert cli.main(["sidebar", "--toggle"]) == 0
     assert capsys.readouterr() == ("", "")
     assert window.tmux.calls() == [[*LIST, PANE], [*SPLIT, PANE, *LAUNCH], TAG]
 
 
+NOW = layout({"I": "%8", "a": True}, {"I": PANE, "l": 1}, {"I": "%6", "l": 0}, w=26)
+AFTER = layout({"I": PANE, "l": 0}, {"I": "%6", "a": True}, w=30)
+
+
+def closing(saved: str) -> str:
+    return f"%8\tstarting\t{saved}\t{NOW}\n{PANE}\t\t\t{NOW}\n%6\t\t\t{NOW}\n"
+
+
+def kill(sidebar: str) -> list[str]:
+    """Closes it, and asks for the layout, focus and last-pane history tmux leaves without it."""
+    return [
+        "kill-pane",
+        "-t",
+        sidebar,
+        ";",
+        "display-message",
+        "-p",
+        "-t",
+        PANE,
+        "#{window_layout}",
+    ]
+
+
 @pytest.mark.parametrize("tag", [sidebar.STARTING, "53122 k3y"])
 def test_toggle_closes_the_sidebar_in_its_window(window, capsys, tag):
-    window.tmux.answer("list-panes", stdout=f"%3\t{tag}\n{PANE}\t\n")
+    window.tmux.answer("list-panes", stdout=f"%3\t{tag}\t\t{NOW}\n{PANE}\t\t\t{NOW}\n")
     assert cli.main(["sidebar", "--toggle"]) == 0
     assert capsys.readouterr() == ("", "")
-    assert window.tmux.calls() == [[*LIST, PANE], ["kill-pane", "-t", "%3"]]
+    assert window.tmux.calls() == [[*LIST, PANE], kill("%3")]
+
+
+def test_closing_puts_back_the_widths_it_took_but_keeps_the_focus(window, capsys):
+    """The layout from before it opened, with the focus and last-pane history tmux leaves once it
+    has closed, which moves the focus off a sidebar that had it."""
+    window.tmux.answer("list-panes", stdout=closing(BEFORE))
+    window.tmux.answer("kill-pane", stdout=AFTER + "\n")
+    assert cli.main(["sidebar", "--toggle", "%8"]) == 0
+    assert capsys.readouterr() == ("", "")
+    restored = json.loads(window.tmux.calls()[2][-1])
+    assert window.tmux.calls()[1:] == [
+        kill("%8"),
+        ["select-layout", "-t", PANE, json.dumps(restored, separators=(",", ":"))],
+    ]
+    assert restored == json.loads(layout({"I": PANE, "l": 0}, {"I": "%6", "a": True}))
+
+
+@pytest.mark.parametrize("saved", ["", "not a layout", "{}"])
+def test_closing_without_a_layout_to_put_back_only_closes(window, saved):
+    window.tmux.answer("list-panes", stdout=closing(saved))
+    window.tmux.answer("kill-pane", stdout=AFTER + "\n")
+    assert cli.main(["sidebar", "--toggle"]) == 0
+    assert window.tmux.calls()[1:] == [kill("%8")]
+
+
+def test_a_layout_that_no_longer_fits_is_left_alone(window, capsys):
+    """tmux refuses a layout whose panes have changed since."""
+    window.tmux.answer("list-panes", stdout=closing(BEFORE))
+    window.tmux.answer("kill-pane", stdout=AFTER + "\n")
+    window.tmux.answer("select-layout", code=1, stderr="have 3 panes but need 2\n")
+    assert cli.main(["sidebar", "--toggle"]) == 0
+    assert capsys.readouterr() == ("", "")
 
 
 def test_toggle_takes_the_pane_from_a_key_binding(window, monkeypatch):
