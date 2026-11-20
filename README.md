@@ -78,7 +78,7 @@ Picking a session lands on one of its agents' panes, every time, even when nothi
 │   notes
 ```
 
-`prefix b` opens it in a 32-column pane down the left edge of the current window, full height, whichever pane you're in. Pressed again, it closes it, and the other panes get back the widths it took. The focus stays where it was.
+`prefix b` opens it in a 32-column pane down the left edge of the current window, full height, whichever pane you're in. It takes the focus, so you can move through it straight away. Pressed again, it closes it, the other panes get back the widths it took, and the focus goes back to the pane you came from.
 
 - **It shows** the picker's list, compact: repo headers, and worktree rows with their state dot. Agents fold into the dot. There are no counts, no git status and no preview, and long names are cut short with `…`. Any [cards](#cards) go under the list.
 - **A folded repo** shows the dot of its most urgent state after its name, so a fold never hides a session that needs you. An open repo's header has no dot.

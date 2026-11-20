@@ -61,6 +61,8 @@ def show() -> int:
     problem = picker.fzf_problem("the sidebar")
     if problem:
         raise picker.PickerError(problem)
+    # It outlives worktrees, and every `sh` it starts in a removed one says its folder is gone.
+    os.chdir(Path.home())
     from switchboard import attention
 
     folder = tempfile.mkdtemp(prefix="switchboard-")
@@ -115,7 +117,10 @@ def toggle(pane: str) -> None:
     # tmux-resurrect saves the command a pane's shell runs, so the sidebar runs under one. `; exit`
     # keeps `sh` from exec'ing it.
     launch = ("sh", "-c", f"{shlex.join([*picker.command(), 'sidebar'])}; exit")
-    split = ("split-window", "-hbdf", "-l", str(COLUMNS), "-P", "-F", "#{pane_id}", "-t", pane)
+    split = (
+        *("split-window", "-hbf", "-l", str(COLUMNS), "-P", "-F", "#{pane_id}"),
+        *("-t", pane, "-c", str(Path.home())),
+    )
     opened = (run.output("tmux", *split, *launch) or "").strip()
     if not opened:
         raise picker.PickerError("can't open the sidebar")

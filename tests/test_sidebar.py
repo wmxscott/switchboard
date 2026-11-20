@@ -266,6 +266,17 @@ def test_keys_and_look(inside):
     assert fields(items(call["stdin"])) == [*COMPACT, gap(30 - 9 - 3), GADGET]
 
 
+def test_the_sidebar_leaves_the_folder_it_started_in(inside, tmp_path, monkeypatch):
+    """A worktree can be removed while the sidebar runs, and every `sh` started in it then
+    complains that its folder is gone."""
+    worktree = tmp_path / "worktree"
+    worktree.mkdir()
+    monkeypatch.chdir(worktree)
+    inside.fzf.reply(code=130)
+    cli.main(["sidebar"])
+    assert Path.cwd().resolve() == Path.home().resolve()
+
+
 def test_the_current_line_is_highlighted_across_and_each_dot_keeps_off_its_edge(inside):
     """fzf fills the current item's lines to its `WIDTH` columns, and a dot sits in the last but
     one of them."""
@@ -872,7 +883,11 @@ LIST = [
     "-t",
 ]
 LAUNCH = ["sh", "-c", f"{shlex.join([*SELF, 'sidebar'])}; exit"]
-SPLIT = ["split-window", "-hbdf", "-l", "32", "-P", "-F", "#{pane_id}", "-t"]
+SPLIT = ["split-window", "-hbf", "-l", "32", "-P", "-F", "#{pane_id}", "-t"]
+
+
+def home() -> list[str]:
+    return ["-c", str(Path.home())]
 
 
 def layout(*panes: dict, w: int = 40) -> str:
@@ -904,7 +919,7 @@ def test_toggle_opens_a_sidebar_down_the_left_and_tags_it_quietly(window, capsys
     """Its tag, and the window's layout before it, for closing it to put back."""
     assert cli.main(["sidebar", "--toggle"]) == 0
     assert capsys.readouterr() == ("", "")
-    assert window.tmux.calls() == [[*LIST, PANE], [*SPLIT, PANE, *LAUNCH], TAG]
+    assert window.tmux.calls() == [[*LIST, PANE], [*SPLIT, PANE, *home(), *LAUNCH], TAG]
 
 
 NOW = layout({"I": "%8", "a": True}, {"I": PANE, "l": 1}, {"I": "%6", "l": 0}, w=26)
@@ -974,14 +989,14 @@ def test_toggle_takes_the_pane_from_a_key_binding(window, monkeypatch):
     """`run-shell` sets `$TMUX` but not `$TMUX_PANE`, so the binding passes `#{pane_id}`."""
     monkeypatch.delenv("TMUX_PANE")
     assert cli.main(["sidebar", "--toggle", "%2"]) == 0
-    assert window.tmux.calls() == [[*LIST, "%2"], [*SPLIT, "%2", *LAUNCH], TAG]
+    assert window.tmux.calls() == [[*LIST, "%2"], [*SPLIT, "%2", *home(), *LAUNCH], TAG]
 
 
 def test_a_failed_split_tags_nothing(window, capsys):
     window.tmux.answer("split-window", code=1, stderr="no space for new pane\n")
     assert cli.main(["sidebar", "--toggle"]) == 1
     assert capsys.readouterr() == ("", "switchboard: can't open the sidebar\n")
-    assert window.tmux.calls() == [[*LIST, PANE], [*SPLIT, PANE, *LAUNCH]]
+    assert window.tmux.calls() == [[*LIST, PANE], [*SPLIT, PANE, *home(), *LAUNCH]]
 
 
 def test_toggle_reports_a_pane_it_cant_find_or_close(window, capsys):
