@@ -1,4 +1,4 @@
-"""Reading Herdr's project list and labelling repos with it."""
+"""Reading switchboard's config and labelling repos with it."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from switchboard.projects import Label, Project
 
 
 def write_list(text: str) -> Path:
-    path = Path.home() / ".config/herdr/plugins/config/herdr-projects/projects.toml"
+    path = Path.home() / ".config/switchboard/config.toml"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text)
     return path
@@ -112,7 +112,7 @@ def test_xdg_config_home_moves_the_list(tmp_path, monkeypatch):
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "elsewhere"))
     write_list("[[projects]]\nname = 'ignored'\npath = '/srv/ignored'\n")
     assert projects.load() == []
-    path = tmp_path / "elsewhere/herdr/plugins/config/herdr-projects/projects.toml"
+    path = tmp_path / "elsewhere/switchboard/config.toml"
     path.parent.mkdir(parents=True)
     path.write_text("[[projects]]\nname = 'moved'\npath = '/srv/moved'\n")
     assert projects.load() == [Project("/srv/moved", Label("", "moved"))]

@@ -396,10 +396,10 @@ Outside tmux, the picker and both sidebar commands exit 1 with a message. Every 
 
 ## Project labels
 
-Repo headers can carry an icon and a label from [herdr-projects](https://github.com/wmxscott/herdr-projects)' project list. The list is optional: without it, or if it can't be read, headers show the repo's folder name. switchboard only reads it, from:
+Repo headers can carry an icon and a label from switchboard's config file. The file is optional: without it, or if it can't be read, headers show the repo's folder name. switchboard reads it from:
 
 ```
-~/.config/herdr/plugins/config/herdr-projects/projects.toml
+~/.config/switchboard/config.toml
 ```
 
 It follows `$XDG_CONFIG_HOME`. The shape:
@@ -417,13 +417,20 @@ path = "~/src/widget"
 
 That labels the repo at `~/src/widget` as `🔧 tools/widget`. A project's own `icon` wins over its group's. A project's `path` can be any checkout or worktree of the repo, and labels all of it. Entries without a `name`, or with a relative `path`, are skipped.
 
+Before 1.5.0, switchboard read [herdr-projects](https://github.com/wmxscott/herdr-projects)' project list instead. That list has the same shape, so copying it keeps your labels:
+
+```sh
+mkdir -p ~/.config/switchboard
+cp ~/.config/herdr/plugins/config/herdr-projects/projects.toml ~/.config/switchboard/config.toml
+```
+
 ## Configuration
 
 | Variable | |
 |---|---|
 | `SWITCHBOARD_THEME` | The picker's colours: `light`, `dark` or `auto`. `auto`, the default, follows [theme-monitor](https://github.com/wmxscott/theme-monitor)'s trigger file, `$XDG_DATA_HOME/theme-monitor/theme-change.trigger`, else macOS's setting, else light |
 | `SWITCHBOARD_SOUND` | The alert's sound file. Empty turns the sound off. By default, macOS's Glass sound. The hook plays it, so set it where Claude Code will see it, such as your shell profile |
-| `XDG_CONFIG_HOME` | Where the [project list](#project-labels) is looked for, instead of `~/.config` |
+| `XDG_CONFIG_HOME` | Where the [config file](#project-labels) is looked for, instead of `~/.config` |
 | `CLAUDE_CONFIG_DIR` | Where Claude Code keeps its team configs, which tell a teammate's pane from its lead's. By default, `~/.claude` |
 
 ## How sessions map to worktrees

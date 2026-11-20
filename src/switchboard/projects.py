@@ -1,4 +1,4 @@
-"""Repo labels from Herdr's project list. A missing or invalid list means no labels."""
+"""Repo labels from switchboard's config. A missing or invalid config means no labels."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from pathlib import Path
 
 from switchboard import git
 
-RELATIVE_PATH = "herdr/plugins/config/herdr-projects/projects.toml"
+RELATIVE_PATH = "switchboard/config.toml"
 
 
 @dataclass(frozen=True)
@@ -29,7 +29,7 @@ class Project:
 
 
 def load(path: Path | None = None) -> list[Project]:
-    """The list's projects, leaving out any entry without a name or an absolute path."""
+    """The config's projects, leaving out any entry without a name or an absolute path."""
     try:
         path = path or Path(os.environ.get("XDG_CONFIG_HOME") or "~/.config", RELATIVE_PATH)
         data = tomllib.loads(path.expanduser().read_text(encoding="utf-8"))

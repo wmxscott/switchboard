@@ -123,7 +123,7 @@ def test_repos_sort_by_label_title_ignoring_the_icon(repos):
 
 def test_load_reads_the_project_list(stubs, repos):
     widget, _ = layout_and_clone(repos)
-    path = Path.home() / ".config/herdr/plugins/config/herdr-projects/projects.toml"
+    path = Path.home() / ".config/switchboard/config.toml"
     path.parent.mkdir(parents=True)
     path.write_text(f"[[projects]]\nname = 'widget'\nicon = 'W'\npath = '{widget}'\n")
     stubs.tmux.answer("list-sessions", stdout=sessions_text(("w", "", widget / "main")))
